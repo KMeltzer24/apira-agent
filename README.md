@@ -54,7 +54,7 @@ pip install -r requirements.txt
 cp .env.example .env   # adjust MCP_URL / OLLAMA_MODEL if needed
 ```
 
-## Run
+## Run (one-shot CLI demo)
 
 ```bash
 python agent.py
@@ -63,8 +63,6 @@ python agent.py
 Expected output (abridged):
 
 ```
-Loaded 2 MCP tools: login, get_portfolio
-
 User prompt: Log in as user 'alice' ...
 
 Running agent...
@@ -73,6 +71,30 @@ Running agent...
 Alice's portfolio contains 5 holdings: AAPL (150 shares), MSFT (80), ...
 ```
 
+## Run as an API (for the chat UI)
+
+`server.py` wraps the agent in a small FastAPI service so a frontend can chat with it:
+
+```bash
+uvicorn server:app --host 127.0.0.1 --port 8100
+```
+
+Then:
+
+```bash
+curl -X POST http://127.0.0.1:8100/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Log in as alice (password: password) and show my portfolio"}'
+# -> {"reply":"Here is your current portfolio: ..."}
+```
+
+The chat UI lives in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) (the "Agent Chat" page) and calls this `/chat` endpoint. The agent runs locally because Ollama is local, so the server binds to your Mac.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /health` | Liveness check |
+| `POST /chat` | `{ "message": "..." }` → `{ "reply": "..." }` |
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -80,9 +102,10 @@ Alice's portfolio contains 5 holdings: AAPL (150 shares), MSFT (80), ...
 | `MCP_URL` | `http://localhost:8000/mcp` | Apira MCP endpoint |
 | `OLLAMA_MODEL` | `qwen2.5` | Local model driving the agent |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server address |
+| `CORS_ORIGINS` | `*` | Comma-separated browser origins allowed to call the API |
 
 ## Notes
 
-- The user prompt is hard-coded in `agent.py` (`USER_PROMPT`). Change it there to experiment.
+- `agent.py` runs a one-shot prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each chat request.
 - The agent never calls the backend APIs directly — it only uses MCP tools, so it stays decoupled from how the APIs are implemented.
-- No authentication on the MCP endpoint (learning project).
+- No authentication on the MCP endpoint or the agent API (learning project).

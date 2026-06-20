@@ -91,7 +91,19 @@ That confirms the agent logged in and retrieved the portfolio automatically usin
 
 ---
 
+## Chat UI
+
+`agent.py` is a one-shot CLI demo. For an interactive UI, `server.py` wraps the agent in a FastAPI service:
+
+```bash
+uvicorn server:app --host 127.0.0.1 --port 8100
+```
+
+It exposes `POST /chat` (`{ "message": "..." }` → `{ "reply": "..." }`). The chat page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) calls this endpoint. The agent server stays in this repo (backend); the UI stays in the frontend (client) — same split as the rest of the project.
+
+---
+
 ## Notes
 
-- Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-ollama 1.1.0, model `qwen2.5`.
-- Change the hard-coded `USER_PROMPT` in `agent.py` to experiment (e.g. log in as `bob`).
+- Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-ollama 1.1.0, fastapi 0.138.0, model `qwen2.5`.
+- `agent.py` uses a default prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each request.
