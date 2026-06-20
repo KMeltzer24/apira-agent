@@ -55,45 +55,21 @@ Config lives in `.env`: `MCP_URL` (must end in `/mcp`), `LLM_MODEL`, `GOOGLE_API
 
 ## How to test
 
-### Option A — one-shot CLI
-
-For a local run, point `MCP_URL` at the EC2 public IP (the `host.docker.internal` default only resolves inside Docker):
+Hit the deployed agent's `/chat` endpoint:
 
 ```bash
-source .venv/bin/activate
-MCP_URL=http://<EC2_PUBLIC_IP>:8000/mcp python agent.py
+curl -s -X POST http://<EC2_PUBLIC_IP>:8100/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Log in as alice (password: password) and show my portfolio"}'
 ```
 
 Expected (the exact wording varies — it's an LLM):
 
-```
-User prompt: Log in as user 'alice' with password 'password', then retrieve that user's portfolio and summarize the holdings.
-
-Running agent...
-
-=== Agent answer ===
-Here are your portfolio holdings:
-- Apple Inc. (AAPL): 150 shares
-- Microsoft Corp. (MSFT): 80 shares
-- Alphabet Inc. (GOOGL): 25 shares
-- Amazon.com Inc. (AMZN): 40 shares
-- Tesla Inc. (TSLA): 60 shares
+```json
+{"reply":"Here are your portfolio holdings:\n- Apple Inc. (AAPL): 150 shares\n- Microsoft Corp. (MSFT): 80 shares\n- Alphabet Inc. (GOOGL): 25 shares\n- Amazon.com Inc. (AMZN): 40 shares\n- Tesla Inc. (TSLA): 60 shares"}
 ```
 
-### Option B — the HTTP API
-
-Start the server (`docker compose up -d --build`) and hit `/chat`:
-
-```bash
-curl -s -X POST http://localhost:8100/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message":"Log in as alice (password: password) and show my portfolio"}'
-# -> {"reply":"Here are your portfolio holdings: ..."}
-```
-
-On EC2, run the same `curl` against `localhost:8100`; from your Mac use `http://<EC2_PUBLIC_IP>:8100/chat` (requires inbound TCP 8100 open in the security group).
-
-Either way confirms the agent logged in and retrieved the portfolio automatically using only MCP tools.
+That confirms the agent logged in and retrieved the portfolio automatically using only MCP tools. (Reaching it from your Mac requires inbound TCP 8100 open in the security group; on EC2 itself use `localhost:8100`.)
 
 ---
 
