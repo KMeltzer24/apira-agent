@@ -23,7 +23,7 @@ load_dotenv()
 MCP_URL = os.environ.get("MCP_URL", "http://host.docker.internal:8000/mcp")
 
 # Gemini model that drives the agent (needs GOOGLE_API_KEY in the environment).
-GEMINI_MODEL = os.environ.get("LLM_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("LLM_MODEL", "gemini-2.5-flash-lite")
 
 # Default prompt used by the one-shot CLI demo. The agent must work out that it
 # needs to call `login` to get a user_id, then `get_portfolio`.
@@ -52,7 +52,11 @@ async def build_agent():
         }
     )
     tools = await client.get_tools()
-    model = ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0)
+    # max_retries=0 so a 429 (quota) fails fast instead of honoring Gemini's
+    # multi-second retry delay and hanging the request.
+    model = ChatGoogleGenerativeAI(
+        model=GEMINI_MODEL, temperature=0, max_retries=0
+    )
     return create_agent(model, tools, system_prompt=SYSTEM_PROMPT)
 
 

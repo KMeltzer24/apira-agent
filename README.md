@@ -78,7 +78,7 @@ curl -X POST http://<EC2_PUBLIC_IP>:8100/chat \
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `MCP_URL` | `http://host.docker.internal:8000/mcp` | Apira MCP endpoint (in-container default; on a Mac use `http://<EC2_PUBLIC_IP>:8000/mcp`) |
-| `LLM_MODEL` | `gemini-2.5-flash` | Gemini model |
+| `LLM_MODEL` | `gemini-2.5-flash-lite` | Gemini model |
 | `GOOGLE_API_KEY` | — | Gemini API key (required) |
 | `CORS_ORIGINS` | `*` | Browser origins allowed to call the API |
 

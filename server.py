@@ -64,5 +64,17 @@ async def health() -> dict:
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
     agent = await get_agent(app)
-    reply = await run_agent(agent, req.message)
+    try:
+        reply = await run_agent(agent, req.message)
+    except Exception as exc:
+        # Return a readable message (with CORS headers intact) instead of a bare
+        # 500, which the browser would surface only as "Failed to fetch".
+        detail = str(exc)
+        if "RESOURCE_EXHAUSTED" in detail or "429" in detail:
+            reply = (
+                "The Gemini API quota is exhausted for now. Try again later, "
+                "switch LLM_MODEL, or raise the project's quota."
+            )
+        else:
+            reply = f"The agent hit an error: {detail[:300]}"
     return ChatResponse(reply=reply)

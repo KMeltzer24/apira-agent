@@ -10,7 +10,7 @@ A Python program that automatically logs in a user and retrieves their portfolio
 |-------|--------|
 | Orchestration | **LangGraph** (`create_agent`) |
 | Tool loading | **langchain-mcp-adapters** |
-| Model | **Gemini** (`gemini-2.5-flash`, via API key) |
+| Model | **Gemini** (`gemini-2.5-flash-lite`, via API key) |
 | Tool source | **apira-mcp** (`login`, `get_portfolio`) |
 
 The agent is a **client** of the MCP server, in its own repo separate from the backend ([apira](https://github.com/KMeltzer24/apira)) and MCP server ([apira-mcp](https://github.com/KMeltzer24/apira-mcp)).
@@ -91,12 +91,6 @@ curl -s -X POST http://<EC2_PUBLIC_IP>:8100/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Log in as alice (password: password) and show my portfolio"}'
 ```
-
-(Reaching it from your Mac requires inbound TCP 8100 open in the security group; on EC2 itself use `localhost:8100`.)
-
-Either path confirms the agent logged in and retrieved the portfolio automatically using only MCP tools.
-
----
 
 ## Troubleshooting
 
