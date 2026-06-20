@@ -14,13 +14,20 @@ import os
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_ollama import ChatOllama
 
 load_dotenv()
 
 MCP_URL = os.environ.get("MCP_URL", "http://localhost:8000/mcp")
+
+# Which LLM backs the agent: "ollama" (local) or "google_genai" (Gemini API).
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "ollama")
+
+# Used when LLM_PROVIDER=ollama (local model on your Mac).
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5")
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+
+# Used when LLM_PROVIDER=google_genai (needs GOOGLE_API_KEY in the environment).
+GEMINI_MODEL = os.environ.get("LLM_MODEL", "gemini-2.5-flash")
 
 # Default prompt used by the one-shot CLI demo. The agent must work out that it
 # needs to call `login` to get a user_id, then `get_portfolio`.
@@ -38,8 +45,25 @@ SYSTEM_PROMPT = (
 )
 
 
+def make_model():
+    """Build the chat model for the configured provider (imports lazily)."""
+    if LLM_PROVIDER == "ollama":
+        from langchain_ollama import ChatOllama
+
+        return ChatOllama(
+            model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, temperature=0
+        )
+    if LLM_PROVIDER == "google_genai":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0)
+    raise ValueError(
+        f"Unknown LLM_PROVIDER={LLM_PROVIDER!r} (use 'ollama' or 'google_genai')"
+    )
+
+
 async def build_agent():
-    """Load MCP tools and build a LangGraph agent backed by the local model."""
+    """Load MCP tools and build a LangGraph agent backed by the chosen model."""
     client = MultiServerMCPClient(
         {
             "apira": {
@@ -49,8 +73,7 @@ async def build_agent():
         }
     )
     tools = await client.get_tools()
-    model = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, temperature=0)
-    return create_agent(model, tools, system_prompt=SYSTEM_PROMPT)
+    return create_agent(make_model(), tools, system_prompt=SYSTEM_PROMPT)
 
 
 async def run_agent(agent, prompt: str) -> str:

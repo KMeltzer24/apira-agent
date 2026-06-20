@@ -4,12 +4,16 @@ services:
     ports:
       - "8100:8100"
     environment:
-      # MCP server (EC2) and model. Values fall back to these defaults, or can
-      # be overridden via a .env file in this directory.
-      - MCP_URL=${MCP_URL:-http://3.133.124.58:8000/mcp}
+      # MCP server. On EC2 (next to apira-mcp) use host.docker.internal:8000;
+      # from a Mac it would be the EC2 public IP. Override via .env.
+      - MCP_URL=${MCP_URL:-http://host.docker.internal:8000/mcp}
+      # LLM provider: google_genai (Gemini) or ollama (local).
+      - LLM_PROVIDER=${LLM_PROVIDER:-google_genai}
+      - LLM_MODEL=${LLM_MODEL:-gemini-2.5-flash}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      # Only used when LLM_PROVIDER=ollama (Ollama runs on the host, not here).
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5}
-      # Ollama runs on the Mac host, not in this container.
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
     extra_hosts:
       - "host.docker.internal:host-gateway"
