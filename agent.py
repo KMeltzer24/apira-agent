@@ -76,10 +76,29 @@ async def build_agent():
     return create_agent(make_model(), tools, system_prompt=SYSTEM_PROMPT)
 
 
+def _as_text(content) -> str:
+    """Normalize a message's content to plain text.
+
+    Ollama returns a string; Gemini returns a list of content blocks like
+    [{"type": "text", "text": "..."}]. Join the text parts in either case.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and "text" in block:
+                parts.append(block["text"])
+        return "".join(parts)
+    return str(content)
+
+
 async def run_agent(agent, prompt: str) -> str:
     """Run one user prompt through the agent and return the final text answer."""
     result = await agent.ainvoke({"messages": [{"role": "user", "content": prompt}]})
-    return result["messages"][-1].content
+    return _as_text(result["messages"][-1].content)
 
 
 async def main() -> None:
