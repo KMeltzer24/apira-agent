@@ -55,18 +55,24 @@ Config lives in `.env`: `MCP_URL` (must end in `/mcp`), `LLM_MODEL`, `GOOGLE_API
 
 ## How to test
 
+### Option A — one-shot CLI
+
+For a local run, point `MCP_URL` at the EC2 public IP (the `host.docker.internal` default only resolves inside Docker):
+
 ```bash
 source .venv/bin/activate
-python agent.py
+MCP_URL=http://3.133.124.58:8000/mcp python agent.py
 ```
 
-Expected:
+Expected (the exact wording varies — it's an LLM):
 
 ```
-Loaded 2 MCP tools: login, get_portfolio
-...
+User prompt: Log in as user 'alice' with password 'password', then retrieve that user's portfolio and summarize the holdings.
+
+Running agent...
+
 === Agent answer ===
-User 'alice' has the following holdings in their portfolio:
+Here are your portfolio holdings:
 - Apple Inc. (AAPL): 150 shares
 - Microsoft Corp. (MSFT): 80 shares
 - Alphabet Inc. (GOOGL): 25 shares
@@ -74,7 +80,20 @@ User 'alice' has the following holdings in their portfolio:
 - Tesla Inc. (TSLA): 60 shares
 ```
 
-That confirms the agent logged in and retrieved the portfolio automatically using only MCP tools.
+### Option B — the HTTP API
+
+Start the server (`docker compose up -d --build`) and hit `/chat`:
+
+```bash
+curl -s -X POST http://localhost:8100/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Log in as alice (password: password) and show my portfolio"}'
+# -> {"reply":"Here are your portfolio holdings: ..."}
+```
+
+On EC2, run the same `curl` against `localhost:8100`; from your Mac use `http://3.133.124.58:8100/chat` (requires inbound TCP 8100 open in the security group).
+
+Either way confirms the agent logged in and retrieved the portfolio automatically using only MCP tools.
 
 ---
 
