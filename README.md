@@ -4,6 +4,8 @@ A standalone Python agent that uses the [Apira MCP server](https://github.com/KM
 
 Built with **LangGraph** + **langchain-mcp-adapters**. It is not tied to Cursor or any IDE; it is a plain `python agent.py` program.
 
+**Full write-up:** [docs/how-the-agent-works.md](docs/how-the-agent-works.md) — what we built, how it works, and how to test it.
+
 **Related repos:**
 
 - Backend APIs: [apira](https://github.com/KMeltzer24/apira)
