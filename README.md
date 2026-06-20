@@ -29,21 +29,23 @@ The agent loads the `login` and `get_portfolio` tools from the MCP server at run
 
 ## Prerequisites
 
-1. **Ollama** installed and running, with a tool-capable model pulled:
+1. **Python 3.11+** (LangGraph/LangChain require 3.10+; this was verified on 3.11).
+
+2. **Ollama** installed and running, with a tool-capable **local** model pulled:
 
    ```bash
    # install from https://ollama.com, then:
-   ollama pull llama3.1
+   ollama pull qwen2.5
    ```
 
-   The model must support tool/function calling (e.g. `llama3.1`, `qwen2.5`, `mistral-nemo`). Smaller chat-only models will not reliably call tools.
+   The model must support tool/function calling. `qwen2.5` (~4.4 GB) gives the best tool-calling reliability per GB; `llama3.1` and `mistral-nemo` also work. Small chat-only models (and cloud `:cloud` models that require a subscription) will not work.
 
-2. **The apira-mcp server reachable** at the URL in your `.env` (the EC2 deployment on port 8000).
+3. **The apira-mcp server reachable** at the URL in your `.env` (the EC2 deployment on port 8000).
 
 ## Setup
 
 ```bash
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -74,7 +76,7 @@ Alice's portfolio contains 5 holdings: AAPL (150 shares), MSFT (80), ...
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `MCP_URL` | `http://localhost:8000/mcp` | Apira MCP endpoint |
-| `OLLAMA_MODEL` | `llama3.1` | Local model driving the agent |
+| `OLLAMA_MODEL` | `qwen2.5` | Local model driving the agent |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server address |
 
 ## Notes

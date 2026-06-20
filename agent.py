@@ -9,14 +9,14 @@ import asyncio
 import os
 
 from dotenv import load_dotenv
+from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_ollama import ChatOllama
-from langgraph.prebuilt import create_react_agent
 
 load_dotenv()
 
 MCP_URL = os.environ.get("MCP_URL", "http://localhost:8000/mcp")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5")
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # Hard-coded user prompt (per project requirement). The agent must work out
@@ -49,7 +49,7 @@ async def main() -> None:
     print(f"Loaded {len(tools)} MCP tools: {', '.join(t.name for t in tools)}")
 
     model = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, temperature=0)
-    agent = create_react_agent(model, tools, prompt=SYSTEM_PROMPT)
+    agent = create_agent(model, tools, system_prompt=SYSTEM_PROMPT)
 
     print(f"\nUser prompt: {USER_PROMPT}\n")
     print("Running agent...\n")
