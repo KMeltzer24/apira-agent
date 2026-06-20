@@ -61,7 +61,7 @@ For a local run, point `MCP_URL` at the EC2 public IP (the `host.docker.internal
 
 ```bash
 source .venv/bin/activate
-MCP_URL=http://3.133.124.58:8000/mcp python agent.py
+MCP_URL=http://<EC2_PUBLIC_IP>:8000/mcp python agent.py
 ```
 
 Expected (the exact wording varies — it's an LLM):
@@ -91,7 +91,7 @@ curl -s -X POST http://localhost:8100/chat \
 # -> {"reply":"Here are your portfolio holdings: ..."}
 ```
 
-On EC2, run the same `curl` against `localhost:8100`; from your Mac use `http://3.133.124.58:8100/chat` (requires inbound TCP 8100 open in the security group).
+On EC2, run the same `curl` against `localhost:8100`; from your Mac use `http://<EC2_PUBLIC_IP>:8100/chat` (requires inbound TCP 8100 open in the security group).
 
 Either way confirms the agent logged in and retrieved the portfolio automatically using only MCP tools.
 
