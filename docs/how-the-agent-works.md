@@ -55,7 +55,36 @@ Config lives in `.env`: `MCP_URL` (must end in `/mcp`), `LLM_MODEL`, `GOOGLE_API
 
 ## How to test
 
-Hit the deployed agent's `/chat` endpoint:
+There are two entry points: a hardcoded one-shot prompt, and the custom-prompt API.
+
+### Hardcoded prompt (the assignment demo)
+
+`agent.py` runs the hardcoded `DEFAULT_PROMPT` ("log in as alice, then summarize the portfolio"). Run it inside the deployed container so it inherits the container's `MCP_URL` and `GOOGLE_API_KEY`:
+
+```bash
+# on EC2
+sudo docker compose exec agent python agent.py
+```
+
+Expected (the exact wording varies — it's an LLM):
+
+```
+User prompt: Log in as user 'alice' with password 'password', then retrieve that user's portfolio and summarize the holdings.
+
+Running agent...
+
+=== Agent answer ===
+Here are your portfolio holdings:
+- Apple Inc. (AAPL): 150 shares
+- Microsoft Corp. (MSFT): 80 shares
+- Alphabet Inc. (GOOGL): 25 shares
+- Amazon.com Inc. (AMZN): 40 shares
+- Tesla Inc. (TSLA): 60 shares
+```
+
+### Custom prompt (the frontend)
+
+The Agent Chat page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) sends whatever you type to the `/chat` API. To exercise that path directly:
 
 ```bash
 curl -s -X POST http://<EC2_PUBLIC_IP>:8100/chat \
@@ -63,13 +92,9 @@ curl -s -X POST http://<EC2_PUBLIC_IP>:8100/chat \
   -d '{"message":"Log in as alice (password: password) and show my portfolio"}'
 ```
 
-Expected (the exact wording varies — it's an LLM):
+(Reaching it from your Mac requires inbound TCP 8100 open in the security group; on EC2 itself use `localhost:8100`.)
 
-```json
-{"reply":"Here are your portfolio holdings:\n- Apple Inc. (AAPL): 150 shares\n- Microsoft Corp. (MSFT): 80 shares\n- Alphabet Inc. (GOOGL): 25 shares\n- Amazon.com Inc. (AMZN): 40 shares\n- Tesla Inc. (TSLA): 60 shares"}
-```
-
-That confirms the agent logged in and retrieved the portfolio automatically using only MCP tools. (Reaching it from your Mac requires inbound TCP 8100 open in the security group; on EC2 itself use `localhost:8100`.)
+Either path confirms the agent logged in and retrieved the portfolio automatically using only MCP tools.
 
 ---
 

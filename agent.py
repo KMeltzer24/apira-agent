@@ -18,7 +18,9 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 
 load_dotenv()
 
-MCP_URL = os.environ.get("MCP_URL", "http://localhost:8000/mcp")
+# Always set via .env / docker-compose. This fallback matches the in-container
+# EC2 deployment (the agent container reaches the MCP container's published port).
+MCP_URL = os.environ.get("MCP_URL", "http://host.docker.internal:8000/mcp")
 
 # Gemini model that drives the agent (needs GOOGLE_API_KEY in the environment).
 GEMINI_MODEL = os.environ.get("LLM_MODEL", "gemini-2.5-flash")
