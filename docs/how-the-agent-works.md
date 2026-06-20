@@ -1,6 +1,6 @@
 # How the Apira Agent Works
 
-A standalone Python program that uses a local LLM to automatically log in a user and retrieve their portfolio — by calling the Apira MCP tools, not the backend APIs directly. It runs as a plain `python agent.py`, not a Cursor/IDE plugin.
+A standalone Python program that uses a local LLM to automatically log in a user and retrieve their portfolio — by calling the Apira MCP tools, not the backend APIs directly. It runs as a plain `python agent.py` program.
 
 ---
 
