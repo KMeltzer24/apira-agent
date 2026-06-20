@@ -2,8 +2,8 @@
 
 Exposes a single `POST /chat` endpoint so a frontend can send a user message
 and get the agent's reply. The agent is built lazily on the first request and
-cached, so the server boots instantly and tolerates the MCP server or Ollama
-not being ready at startup.
+cached, so the server boots instantly and tolerates the MCP server not being
+ready at startup.
 
 Run with:  uvicorn server:app --host 0.0.0.0 --port 8100
 """

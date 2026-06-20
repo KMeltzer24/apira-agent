@@ -1,6 +1,6 @@
 # Apira Agent
 
-A Python agent that uses the [Apira MCP server](https://github.com/KMeltzer24/apira-mcp) tools to log in a user and retrieve their portfolio. The LLM behind it is pluggable: **Gemini** via API key (default, runs anywhere) or a **local Ollama** model (free, Mac-only).
+A Python agent that uses the [Apira MCP server](https://github.com/KMeltzer24/apira-mcp) tools to log in a user and retrieve their portfolio, driven by **Google Gemini**.
 
 Built with **LangGraph** + **langchain-mcp-adapters**. Deployed on **EC2** in Docker, alongside the backend and MCP server.
 
@@ -15,10 +15,9 @@ Built with **LangGraph** + **langchain-mcp-adapters**. Deployed on **EC2** in Do
 ## How it works
 
 ```
-agent.py / server.py
-  │  prompt: "log in as alice, then get the portfolio"
+agent.py / server.py (prompt)
   ▼
-LangGraph agent + LLM (Gemini API, or local Ollama)
+LangGraph agent + Gemini
   │  loads tools over MCP, decides which to call
   ▼
 apira-mcp (:8000/mcp)
@@ -29,17 +28,6 @@ Apira backend APIs → RDS
 
 The agent loads the `login` and `get_portfolio` tools from the MCP server at runtime. Given the prompt, the model calls `login` first to get a `user_id`, then `get_portfolio` with that id, and summarizes the holdings.
 
-## LLM providers
-
-Set `LLM_PROVIDER` in `.env`:
-
-| Provider | `LLM_PROVIDER` | Needs | Runs on |
-|----------|----------------|-------|---------|
-| **Gemini** (default) | `google_genai` | `GOOGLE_API_KEY` ([get one](https://aistudio.google.com/apikey)) | Anywhere (EC2 or Mac) |
-| **Ollama** (local) | `ollama` | Ollama + `ollama pull qwen2.5` | Mac only |
-
-Gemini is the default because it needs no local model, so the agent can be hosted on EC2 like the rest of the stack.
-
 ## Setup
 
 ```bash
@@ -47,7 +35,7 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env   # set GOOGLE_API_KEY (Gemini) or switch LLM_PROVIDER=ollama
+cp .env.example .env   # set GOOGLE_API_KEY (get one at https://aistudio.google.com/apikey)
 ```
 
 ## Run (one-shot CLI demo)
@@ -102,9 +90,10 @@ Then on EC2, edit `~/apira-agent/.env`:
 
 ```bash
 MCP_URL=http://host.docker.internal:8000/mcp   # reaches the apira-mcp container
-LLM_PROVIDER=google_genai
 GOOGLE_API_KEY=<your-gemini-key>
 ```
+
+…and recreate the container so it picks up the key: `sudo docker compose up -d --force-recreate`.
 
 Open inbound **TCP 8100** in the EC2 security group for your laptop IP (same as 8000/8001/8002). The tarball never overwrites an existing `~/apira-agent/.env`.
 
@@ -113,11 +102,8 @@ Open inbound **TCP 8100** in the EC2 security group for your laptop IP (same as 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `MCP_URL` | `http://localhost:8000/mcp` | Apira MCP endpoint |
-| `LLM_PROVIDER` | `ollama` (code) / `google_genai` (.env) | `google_genai` or `ollama` |
-| `LLM_MODEL` | `gemini-2.5-flash` | Gemini model (when using `google_genai`) |
-| `GOOGLE_API_KEY` | — | Gemini API key (when using `google_genai`) |
-| `OLLAMA_MODEL` | `qwen2.5` | Local model (when using `ollama`) |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server address |
+| `LLM_MODEL` | `gemini-2.5-flash` | Gemini model |
+| `GOOGLE_API_KEY` | — | Gemini API key (required) |
 | `CORS_ORIGINS` | `*` | Browser origins allowed to call the API |
 
 ## Notes

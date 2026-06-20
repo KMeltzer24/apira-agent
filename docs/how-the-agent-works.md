@@ -1,6 +1,6 @@
 # How the Apira Agent Works
 
-A Python program that automatically logs in a user and retrieves their portfolio — by calling the Apira MCP tools, not the backend APIs directly. The LLM behind it is pluggable: Gemini (API key, default) or a local Ollama model.
+A Python program that automatically logs in a user and retrieves their portfolio — by calling the Apira MCP tools, not the backend APIs directly. The LLM behind it is Google Gemini.
 
 ---
 
@@ -10,7 +10,7 @@ A Python program that automatically logs in a user and retrieves their portfolio
 |-------|--------|
 | Orchestration | **LangGraph** (`create_agent`) |
 | Tool loading | **langchain-mcp-adapters** |
-| Model | **Gemini** (API key, default) or **Ollama** (local) |
+| Model | **Gemini** (`gemini-2.5-flash`, via API key) |
 | Tool source | **apira-mcp** (`login`, `get_portfolio`) |
 
 The agent is a **client** of the MCP server, in its own repo separate from the backend ([apira](https://github.com/KMeltzer24/apira)) and MCP server ([apira-mcp](https://github.com/KMeltzer24/apira-mcp)).
@@ -22,7 +22,7 @@ The agent is a **client** of the MCP server, in its own repo separate from the b
 ```
 agent.py / server.py (prompt)
   ▼
-LangGraph agent + LLM (Gemini API, or local Ollama)
+LangGraph agent + Gemini
   ▼
 apira-mcp (:8000/mcp)
   ▼
@@ -38,17 +38,6 @@ The agent never hardcodes the API shape — it discovers the tools at runtime an
 
 ---
 
-## Choosing the LLM
-
-Set `LLM_PROVIDER` in `.env`:
-
-| Provider | `LLM_PROVIDER` | Needs | Runs on |
-|----------|----------------|-------|---------|
-| Gemini (default) | `google_genai` | `GOOGLE_API_KEY` | Anywhere (EC2 or Mac) |
-| Ollama (local) | `ollama` | Ollama + `ollama pull qwen2.5` | Mac only |
-
-Gemini needs no local model, so the agent can be hosted on EC2 like the backend and MCP server.
-
 ## Setup
 
 ```bash
@@ -57,10 +46,10 @@ python3.11 -m venv .venv          # 3.10+ required; system 3.9 won't work
 source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env              # set GOOGLE_API_KEY, or LLM_PROVIDER=ollama
+cp .env.example .env              # set GOOGLE_API_KEY (aistudio.google.com/apikey)
 ```
 
-Config lives in `.env`: `MCP_URL` (must end in `/mcp`), `LLM_PROVIDER`, plus the provider's keys.
+Config lives in `.env`: `MCP_URL` (must end in `/mcp`), `LLM_MODEL`, `GOOGLE_API_KEY`. Gemini needs no local model, so the agent can be hosted on EC2 like the backend and MCP server.
 
 ---
 
@@ -97,7 +86,6 @@ That confirms the agent logged in and retrieved the portfolio automatically usin
 | `DefaultCredentialsError` / 401 / 403 from Gemini | Missing or invalid `GOOGLE_API_KEY` | Set a valid key from aistudio.google.com/apikey |
 | `zsh: bad pattern: #` | Inline `#` comment after a command | Run the command alone, no trailing comment |
 | Timeout reaching the server | EC2 stopped or your IP changed | Start EC2; open inbound TCP 8000 for your IP |
-| (Ollama) model never calls tools | Model lacks tool calling | Use `qwen2.5`, `llama3.1`, or `mistral-nemo` |
 
 ---
 
@@ -111,11 +99,11 @@ Run it with Docker (recommended — auto-restarts via `restart: unless-stopped`)
 docker compose up -d --build
 ```
 
-With Gemini this is deployed on EC2 (port 8100); see the EC2 section in the [README](../README.md). The chat page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) calls this endpoint. The agent server stays in this repo (backend); the UI stays in the frontend (client) — same split as the rest of the project.
+This is deployed on EC2 (port 8100); see the EC2 section in the [README](../README.md). The chat page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) calls this endpoint. The agent server stays in this repo (backend); the UI stays in the frontend (client) — same split as the rest of the project.
 
 ---
 
 ## Notes
 
-- Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-ollama 1.1.0, langchain-google-genai 4.2.5, fastapi 0.138.0.
+- Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-google-genai 4.2.5, fastapi 0.138.0.
 - `agent.py` uses a default prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each request.
