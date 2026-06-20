@@ -93,13 +93,17 @@ That confirms the agent logged in and retrieved the portfolio automatically usin
 
 ## Chat UI
 
-`agent.py` is a one-shot CLI demo. For an interactive UI, `server.py` wraps the agent in a FastAPI service:
+`agent.py` is a one-shot CLI demo. For an interactive UI, `server.py` wraps the agent in a FastAPI service exposing `POST /chat` (`{ "message": "..." }` → `{ "reply": "..." }`). The agent is built lazily on the first request, so the server boots instantly.
+
+Run it with Docker (recommended — auto-restarts via `restart: unless-stopped`):
 
 ```bash
-uvicorn server:app --host 127.0.0.1 --port 8100
+docker compose up -d --build
 ```
 
-It exposes `POST /chat` (`{ "message": "..." }` → `{ "reply": "..." }`). The chat page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) calls this endpoint. The agent server stays in this repo (backend); the UI stays in the frontend (client) — same split as the rest of the project.
+The container reaches Ollama on the Mac host via `host.docker.internal`. Or run it directly: `uvicorn server:app --host 127.0.0.1 --port 8100`.
+
+The chat page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) calls this endpoint. The agent server stays in this repo (backend); the UI stays in the frontend (client) — same split as the rest of the project.
 
 ---
 

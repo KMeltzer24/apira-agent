@@ -1,0 +1,16 @@
+services:
+  agent:
+    build: .
+    ports:
+      - "8100:8100"
+    environment:
+      # MCP server (EC2) and model. Values fall back to these defaults, or can
+      # be overridden via a .env file in this directory.
+      - MCP_URL=${MCP_URL:-http://3.133.124.58:8000/mcp}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5}
+      # Ollama runs on the Mac host, not in this container.
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

@@ -73,13 +73,28 @@ Alice's portfolio contains 5 holdings: AAPL (150 shares), MSFT (80), ...
 
 ## Run as an API (for the chat UI)
 
-`server.py` wraps the agent in a small FastAPI service so a frontend can chat with it:
+`server.py` wraps the agent in a small FastAPI service so a frontend can chat with it. The agent is built lazily on the first request, so the server boots instantly.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /health` | Liveness check |
+| `POST /chat` | `{ "message": "..." }` → `{ "reply": "..." }` |
+
+### Option A — Docker (recommended, auto-restarts)
+
+```bash
+docker compose up -d --build
+```
+
+This runs the API on port 8100 with `restart: unless-stopped`, so it comes back after crashes and reboots (whenever Docker Desktop is running). The container reaches **Ollama on your Mac** via `host.docker.internal`, so Ollama still runs on the host (not in the container).
+
+### Option B — directly with uvicorn
 
 ```bash
 uvicorn server:app --host 127.0.0.1 --port 8100
 ```
 
-Then:
+### Verify either way
 
 ```bash
 curl -X POST http://127.0.0.1:8100/chat \
@@ -88,12 +103,7 @@ curl -X POST http://127.0.0.1:8100/chat \
 # -> {"reply":"Here is your current portfolio: ..."}
 ```
 
-The chat UI lives in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) (the "Agent Chat" page) and calls this `/chat` endpoint. The agent runs locally because Ollama is local, so the server binds to your Mac.
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /health` | Liveness check |
-| `POST /chat` | `{ "message": "..." }` → `{ "reply": "..." }` |
+The chat UI lives in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) (the "Agent Chat" page) and calls this `/chat` endpoint. Ollama runs locally, so the server runs on your Mac (not EC2).
 
 ## Configuration
 
