@@ -11,7 +11,7 @@ A Python program that automatically logs in a user and retrieves their portfolio
 | Orchestration | **LangGraph** (`create_agent`) |
 | Tool loading | **langchain-mcp-adapters** |
 | Model | **Gemini** (`gemini-2.5-flash-lite`, via API key) |
-| Tool source | **apira-mcp** (`login`, `get_portfolio`) |
+| Tool source | **apira-mcp** (`login`, `get_portfolio`, `searchLocalFolder`) |
 
 The agent is a **client** of the MCP server, in its own repo separate from the backend ([apira](https://github.com/KMeltzer24/apira)) and MCP server ([apira-mcp](https://github.com/KMeltzer24/apira-mcp)).
 
@@ -27,10 +27,11 @@ LangGraph agent + Gemini
 apira-mcp (:8000/mcp)
   ▼
 backend APIs (:8001 / :8002) → RDS
+  + stock-research files on EC2 (searchLocalFolder)
 ```
 
-1. Connect to the MCP server and load the `login` and `get_portfolio` tools.
-2. `create_agent` wires the model to those tools with a system prompt: log in first to get a `user_id`, then fetch the portfolio.
+1. Connect to the MCP server and load the `login`, `get_portfolio`, and `searchLocalFolder` tools.
+2. `create_agent` wires the model to those tools with a system prompt: log in first to get a `user_id`, then fetch the portfolio; for recommendations, search research files and cite them.
 3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio").
 4. The model calls `login` → gets `user_id`, then `get_portfolio(user_id)`, then summarizes.
 

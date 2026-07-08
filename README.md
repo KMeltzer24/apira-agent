@@ -6,6 +6,8 @@ Built with **LangGraph** + **langchain-mcp-adapters**. It runs on **EC2** in Doc
 
 **Full write-up:** [docs/how-the-agent-works.md](docs/how-the-agent-works.md) — what we built, how it works, and how to test it.
 
+**Stock Recommender (Phase I):** [apira-mcp/docs/how-stock-recommender-works.md](https://github.com/KMeltzer24/apira-mcp/blob/main/docs/how-stock-recommender-works.md) — how the agent uses `searchLocalFolder` for recommendations.
+
 **Related repos:**
 
 - Backend APIs: [apira](https://github.com/KMeltzer24/apira)
@@ -26,7 +28,7 @@ apira-mcp (:8000/mcp)
 Apira backend APIs → RDS
 ```
 
-The agent loads the `login` and `get_portfolio` tools from the MCP server at runtime. Given the prompt, the model calls `login` first to get a `user_id`, then `get_portfolio` with that id, and summarizes the holdings.
+The agent loads the `login`, `get_portfolio`, and `searchLocalFolder` tools from the MCP server at runtime. Given the prompt, the model calls `login` first to get a `user_id`, then `get_portfolio` with that id. For stock recommendations it also calls `searchLocalFolder` to read research files on EC2 and summarizes actionable advice.
 
 `server.py` wraps the agent in a FastAPI service (the agent is built lazily on the first request, so the server boots instantly):
 
@@ -61,6 +63,8 @@ GOOGLE_API_KEY=<your-gemini-key>
 ```
 
 …and recreate the container so it picks up the key: `sudo docker compose up -d --force-recreate`.
+
+After redeploying **apira-mcp** with new tools, restart the agent so it reloads them: `sudo docker compose restart` in `~/apira-agent/`.
 
 Open inbound **TCP 8100** in the EC2 security group for your laptop IP (same as 8000/8001/8002). The tarball never overwrites an existing `~/apira-agent/.env`.
 
