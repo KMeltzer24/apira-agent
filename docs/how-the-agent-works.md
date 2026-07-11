@@ -33,7 +33,7 @@ backend APIs (:8001 / :8002) → RDS
 1. Connect to the MCP server and load the `login`, `get_portfolio`, and `searchLocalFolder` tools.
 2. `create_agent` wires the model to those tools with a system prompt: log in first to get a `user_id`, then fetch the portfolio; for recommendations, search research files and cite them.
 3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio").
-4. The model calls `login` → gets `user_id`, then `get_portfolio(user_id)`, then summarizes.
+4. The model calls `login` → gets `user_id`, then `get_portfolio(user_id)`, then summarizes. For stock recommendations (Recommender tab), it also calls `searchLocalFolder` per ticker and cites the research files.
 
 The agent never hardcodes the API shape — it discovers the tools at runtime and the LLM chains them itself.
 
@@ -83,15 +83,17 @@ Here are your portfolio holdings:
 - Tesla Inc. (TSLA): 60 shares
 ```
 
-### Custom prompt (the frontend)
+### Custom prompt (Agent Chat and Recommender)
 
-The Agent Chat page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) sends whatever you type to the `/chat` API. To exercise that path directly:
+The **Agent Chat** page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) sends whatever you type to the `/chat` API. The **Recommender** page sends a structured prompt (login → portfolio → `searchLocalFolder` → hold/add/trim advice). To exercise Agent Chat directly:
 
 ```bash
 curl -s -X POST http://<EC2_PUBLIC_IP>:8100/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Log in as alice (password: password) and show my portfolio"}'
 ```
+
+For the Recommender path, see [apira-mcp/docs/how-stock-recommender-works.md](https://github.com/KMeltzer24/apira-mcp/blob/main/docs/how-stock-recommender-works.md).
 
 ## Troubleshooting
 
@@ -114,7 +116,7 @@ Run it with Docker (recommended — auto-restarts via `restart: unless-stopped`)
 docker compose up -d --build
 ```
 
-This is deployed on EC2 (port 8100); see the EC2 section in the [README](../README.md). The chat page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) calls this endpoint. The agent server stays in this repo (backend); the UI stays in the frontend (client) — same split as the rest of the project.
+This is deployed on EC2 (port 8100); see the EC2 section in the [README](../README.md). The **Agent Chat** and **Recommender** pages in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) call this endpoint. The agent server stays in this repo (backend); the UI stays in the frontend (client) — same split as the rest of the project.
 
 ---
 

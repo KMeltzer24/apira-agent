@@ -1,8 +1,8 @@
 # Apira Agent
 
-A Python agent that uses the [Apira MCP server](https://github.com/KMeltzer24/apira-mcp) tools to log in a user and retrieve their portfolio, driven by **Google Gemini**.
+A Python agent that uses the [Apira MCP server](https://github.com/KMeltzer24/apira-mcp) tools to log in a user, retrieve their portfolio, and (via `searchLocalFolder`) read stock research files for recommendations — driven by **Google Gemini**.
 
-Built with **LangGraph** + **langchain-mcp-adapters**. It runs on **EC2** in Docker, alongside the backend and MCP server — the frontend's Agent Chat page calls it there.
+Built with **LangGraph** + **langchain-mcp-adapters**. It runs on **EC2** in Docker, alongside the backend and MCP server — the frontend's **Agent Chat** and **Recommender** pages call it there.
 
 **Full write-up:** [docs/how-the-agent-works.md](docs/how-the-agent-works.md) — what we built, how it works, and how to test it.
 
@@ -23,7 +23,9 @@ LangGraph agent + Gemini
   │  loads tools over MCP, decides which to call
   ▼
 apira-mcp (:8000/mcp)
-  │  login → user-service, get_portfolio → portfolio-service
+  │  login → user-service
+  │  get_portfolio → portfolio-service
+  │  searchLocalFolder → stock-research/ on EC2
   ▼
 Apira backend APIs → RDS
 ```
