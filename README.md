@@ -26,6 +26,7 @@ apira-mcp (:8000/mcp)
   │  login → user-service
   │  get_portfolio → portfolio-service
   │  searchLocalFolder → stock-research/ on EC2
+  │  searchVectorDB → RDS pgvector (research_chunks)
   ▼
 Apira backend APIs → RDS
 ```
