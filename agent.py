@@ -23,7 +23,7 @@ load_dotenv()
 MCP_URL = os.environ.get("MCP_URL", "http://host.docker.internal:8000/mcp")
 
 # Gemini model that drives the agent (needs GOOGLE_API_KEY in the environment).
-GEMINI_MODEL = os.environ.get("LLM_MODEL", "gemini-2.5-flash-lite")
+GEMINI_MODEL = os.environ.get("LLM_MODEL", "gemini-3.1-flash-lite")
 
 # Default prompt used by the one-shot CLI demo. The agent must work out that it
 # needs to call `login` to get a user_id, then `get_portfolio`.

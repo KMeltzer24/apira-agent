@@ -10,7 +10,7 @@ A Python program that automatically logs in a user and retrieves their portfolio
 |-------|--------|
 | Orchestration | **LangGraph** (`create_agent`) |
 | Tool loading | **langchain-mcp-adapters** |
-| Model | **Gemini** (`gemini-2.5-flash-lite`, via API key) |
+| Model | **Gemini** (`gemini-3.1-flash-lite`, via API key) |
 | Tool source | **apira-mcp** (`login`, `get_portfolio`, `searchLocalFolder`, `searchVectorDB`) |
 
 The agent is a **client** of the MCP server, in its own repo separate from the backend ([apira](https://github.com/KMeltzer24/apira)) and MCP server ([apira-mcp](https://github.com/KMeltzer24/apira-mcp)).
