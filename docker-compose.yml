@@ -4,9 +4,9 @@ services:
     ports:
       - "8100:8100"
     environment:
-      # MCP server. On EC2 (next to apira-mcp) use host.docker.internal:8000;
-      # from a Mac it would be the EC2 public IP. Override via .env.
+      # Backend and research MCP servers on the EC2 host.
       - MCP_URL=${MCP_URL:-http://host.docker.internal:8000/mcp}
+      - RAG_MCP_URL=${RAG_MCP_URL:-http://host.docker.internal:8200/mcp}
       - LLM_MODEL=${LLM_MODEL:-gemini-3.1-flash-lite}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}

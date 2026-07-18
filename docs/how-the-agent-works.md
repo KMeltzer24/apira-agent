@@ -11,9 +11,9 @@ A Python program that automatically logs in a user and retrieves their portfolio
 | Orchestration | **LangGraph** (`create_agent`) |
 | Tool loading | **langchain-mcp-adapters** |
 | Model | **Gemini** (`gemini-3.1-flash-lite`, via API key) |
-| Tool source | **apira-mcp** (`login`, `get_portfolio`, `searchLocalFolder`, `searchVectorDB`) |
+| Tool sources | **apira-mcp** (`login`, `get_portfolio`) + **apira-rag** (`searchLocalFolder`, `searchVectorDB`) |
 
-The agent is a **client** of the MCP server, in its own repo separate from the backend ([apira](https://github.com/KMeltzer24/apira)) and MCP server ([apira-mcp](https://github.com/KMeltzer24/apira-mcp)).
+The agent is a client of both MCP servers, in its own repo separate from [apira](https://github.com/KMeltzer24/apira), [apira-mcp](https://github.com/KMeltzer24/apira-mcp), and [apira-rag](https://github.com/KMeltzer24/apira-rag).
 
 ---
 
@@ -24,17 +24,16 @@ agent.py / server.py (prompt)
   ▼
 LangGraph agent + Gemini
   ▼
-apira-mcp (:8000/mcp)
-  ▼
-backend APIs (:8001 / :8002) → RDS
-  + stock-research files on EC2 (searchLocalFolder)
-  + research_chunks in RDS (searchVectorDB / pgvector)
+├── apira-mcp (:8000/mcp) → backend APIs (:8001 / :8002) → RDS
+└── apira-rag (:8200/mcp)
+    ├── stock-research files on EC2 (searchLocalFolder)
+    └── research_chunks in RDS (searchVectorDB / pgvector)
 ```
 
-1. Connect to the MCP server and load the `login`, `get_portfolio`, `searchLocalFolder`, and `searchVectorDB` tools.
+1. Connect to both MCP servers and load `login`, `get_portfolio`, `searchLocalFolder`, and `searchVectorDB`.
 2. `create_agent` wires the model to those tools with a system prompt: log in first to get a `user_id`, then fetch the portfolio; for recommendations, use the research tool specified in the user message (local folder or vector DB).
 3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio").
-4. The model calls `login` → gets `user_id`, then `get_portfolio(user_id)`, then summarizes. For stock recommendations (Recommender tab), it also calls `searchLocalFolder` per ticker and cites the research files.
+4. The model calls `login` → gets `user_id`, then `get_portfolio(user_id)`, then summarizes. For recommendations it calls the selected research tool per ticker and cites files.
 
 The agent never hardcodes the API shape — it discovers the tools at runtime and the LLM chains them itself.
 
@@ -51,7 +50,7 @@ pip install -r requirements.txt
 cp .env.example .env              # set GOOGLE_API_KEY (aistudio.google.com/apikey)
 ```
 
-Config lives in `.env`: `MCP_URL` (must end in `/mcp`), `LLM_MODEL`, `GOOGLE_API_KEY`. Gemini needs no local model, so the agent can be hosted on EC2 like the backend and MCP server.
+Config lives in `.env`: `MCP_URL`, `RAG_MCP_URL` (both must end in `/mcp`), `LLM_MODEL`, and `GOOGLE_API_KEY`.
 
 ---
 
@@ -86,7 +85,7 @@ Here are your portfolio holdings:
 
 ### Custom prompt (Agent Chat and Recommender)
 
-The **Agent Chat** page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) sends whatever you type to the `/chat` API. The **Recommender** page sends a structured prompt (login → portfolio → `searchLocalFolder` → hold/add/trim advice). To exercise Agent Chat directly:
+The **Agent Chat** page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) sends whatever you type to the `/chat` API. The **Recommender** page sends a structured prompt with the selected research tool. To exercise Agent Chat directly:
 
 ```bash
 curl -s -X POST http://<EC2_PUBLIC_IP>:8100/chat \
@@ -94,13 +93,13 @@ curl -s -X POST http://<EC2_PUBLIC_IP>:8100/chat \
   -d '{"message":"Log in as alice (password: password) and show my portfolio"}'
 ```
 
-For the Recommender path, see [apira-mcp/docs/how-stock-recommender-works.md](https://github.com/KMeltzer24/apira-mcp/blob/main/docs/how-stock-recommender-works.md).
+For the Recommender path, see [apira-rag/docs/how-stock-recommender-works.md](https://github.com/KMeltzer24/apira-rag/blob/main/docs/how-stock-recommender-works.md).
 
 ## Troubleshooting
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| `httpx.ConnectError: All connection attempts failed` | No `.env`, so it tried `localhost:8000` | Create `.env`; set `MCP_URL` correctly |
+| `httpx.ConnectError: All connection attempts failed` | An MCP URL is unavailable | Check `MCP_URL`, `RAG_MCP_URL`, and both servers |
 | `DefaultCredentialsError` / 401 / 403 from Gemini | Missing or invalid `GOOGLE_API_KEY` | Set a valid key from aistudio.google.com/apikey |
 | `zsh: bad pattern: #` | Inline `#` comment after a command | Run the command alone, no trailing comment |
 | Timeout reaching the server | EC2 stopped or your IP changed | Start EC2; open inbound TCP 8000 for your IP |

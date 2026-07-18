@@ -1,8 +1,7 @@
-"""Apira agent — a LangGraph agent that uses the Apira MCP tools.
+"""Apira agent — a LangGraph agent that uses Apira's MCP tools.
 
-It connects to the apira-mcp server, loads the `login` and `get_portfolio`
-tools, and runs a user prompt through the Gemini API. The agent decides on its
-own to log in first, then fetch the portfolio.
+It connects to apira-mcp for backend tools and apira-rag for research tools,
+then runs a user prompt through the Gemini API.
 
 Run directly (`python agent.py`) for a one-shot demo with a hard-coded prompt,
 or import `build_agent` / `run_agent` to serve it (see server.py).
@@ -21,6 +20,9 @@ load_dotenv()
 # Always set via .env / docker-compose. This fallback matches the in-container
 # EC2 deployment (the agent container reaches the MCP container's published port).
 MCP_URL = os.environ.get("MCP_URL", "http://host.docker.internal:8000/mcp")
+RAG_MCP_URL = os.environ.get(
+    "RAG_MCP_URL", "http://host.docker.internal:8200/mcp"
+)
 
 # Gemini model that drives the agent (needs GOOGLE_API_KEY in the environment).
 GEMINI_MODEL = os.environ.get("LLM_MODEL", "gemini-3.1-flash-lite")
@@ -54,6 +56,10 @@ async def build_agent():
         {
             "apira": {
                 "url": MCP_URL,
+                "transport": "streamable_http",
+            },
+            "research": {
+                "url": RAG_MCP_URL,
                 "transport": "streamable_http",
             }
         }
