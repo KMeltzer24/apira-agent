@@ -54,6 +54,28 @@ Config lives in `.env`: `MCP_URL`, `RAG_MCP_URL` (both must end in `/mcp`), `LLM
 
 ---
 
+## Logging and request correlation
+
+`server.py` accepts a valid `X-Request-ID` or generates a UUID, includes it in
+the response, and keeps it active throughout the agent run. `agent.py`
+propagates that ID in LangGraph metadata and to both MCP servers.
+
+Structured JSON events cover HTTP requests, agent build/run lifecycle, and MCP
+tool calls. Events include safe metadata such as durations, model/tool names,
+argument names, and result sizes. They omit prompts, replies, tool argument
+values, credentials, and API keys. Follow them on EC2 with:
+
+```bash
+cd ~/apira-agent
+sudo docker compose logs -f agent
+```
+
+Use the same request ID in the MCP, RAG, and backend container logs to trace one
+frontend action end to end. See the canonical
+[logging contract](https://github.com/KMeltzer24/apira/blob/main/docs/logging.md).
+
+---
+
 ## How to test
 
 There are two entry points: a hardcoded one-shot prompt, and the custom-prompt API.

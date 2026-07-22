@@ -10,6 +10,10 @@ services:
       - LLM_MODEL=${LLM_MODEL:-gemini-3.1-flash-lite}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_NAME=${SERVICE_NAME:-apira-agent}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

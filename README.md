@@ -8,6 +8,10 @@ Built with **LangChain**, **LangGraph**, and **langchain-mcp-adapters**. It runs
 
 **Stock Recommender:** [apira-rag/docs/how-stock-recommender-works.md](https://github.com/KMeltzer24/apira-rag/blob/main/docs/how-stock-recommender-works.md).
 
+**Logging contract:** [apira/docs/logging.md](https://github.com/KMeltzer24/apira/blob/main/docs/logging.md).
+**How logging works:** [apira/docs/how-logging-works.md](https://github.com/KMeltzer24/apira/blob/main/docs/how-logging-works.md).
+**Demo:** [apira/docs/demo-logging.md](https://github.com/KMeltzer24/apira/blob/main/docs/demo-logging.md).
+
 **Related repos:**
 
 - Backend APIs: [apira](https://github.com/KMeltzer24/apira)
@@ -57,7 +61,7 @@ The agent runs on EC2 next to the backend and both MCP servers, in Docker with `
 
 ```bash
 tar czf /tmp/apira-agent-deploy.tgz \
-  agent.py server.py requirements.txt Dockerfile .dockerignore docker-compose.yml .env.example
+  agent.py server.py logging_config.py requirements.txt Dockerfile .dockerignore docker-compose.yml .env.example
 
 scp -i ../apira/my-ec2-key.pem /tmp/apira-agent-deploy.tgz ec2-user@<EC2_PUBLIC_IP>:/tmp/
 
@@ -101,6 +105,23 @@ curl -X POST http://<EC2_PUBLIC_IP>:8100/chat \
 | `LLM_MODEL` | `gemini-3.1-flash-lite` | Gemini model |
 | `GOOGLE_API_KEY` | — | Gemini API key (required) |
 | `CORS_ORIGINS` | `*` | Browser origins allowed to call the API |
+| `LOG_LEVEL` | `INFO` | Minimum structured-log level |
+| `LOG_FORMAT` | `json` | `json` for container logs or `text` for local debugging |
+| `ENVIRONMENT` | `development` | Environment label included in each log event |
+| `SERVICE_NAME` | `apira-agent` | Service label included in each log event |
+
+## Logging and correlation
+
+The API accepts or generates an `X-Request-ID`, returns it to the caller, and
+propagates it through LangGraph and calls to both MCP servers. JSON events on
+stdout cover HTTP requests, agent build/run lifecycle, and MCP tool calls,
+including safe metadata such as durations and argument names. Prompts, replies,
+tool argument values, passwords, and keys are not logged.
+
+```bash
+sudo docker compose logs -f agent
+sudo docker compose logs --since=10m agent | grep '<request-id>'
+```
 
 ## Local development (optional)
 
