@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 
 REQUEST_ID_HEADER = "X-Request-ID"
 _request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
+_user_id: ContextVar[int | None] = ContextVar("user_id", default=None)
 _RESERVED_LOG_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__)
 _SENSITIVE_KEY_PARTS = (
     "api_key",
@@ -24,6 +25,15 @@ _SENSITIVE_KEY_PARTS = (
     "reply",
     "secret",
     "token",
+)
+# Third-party HTTP clients spam INFO with full URLs (e.g. Gemini).
+_NOISY_LOGGERS = (
+    "httpx",
+    "httpcore",
+    "google_genai",
+    "google.genai",
+    "urllib3",
+    "openai",
 )
 
 
@@ -42,6 +52,21 @@ def reset_request_id(token: Token) -> None:
     _request_id.reset(token)
 
 
+def get_user_id() -> int | None:
+    """Return the numeric user ID active in the current async context."""
+    return _user_id.get()
+
+
+def set_user_id(user_id: int | None) -> Token:
+    """Set the user ID and return a token suitable for resetting it."""
+    return _user_id.set(user_id)
+
+
+def reset_user_id(token: Token) -> None:
+    """Restore the user context represented by *token*."""
+    _user_id.reset(token)
+
+
 def normalize_request_id(value: str | None) -> str:
     """Accept a UUID request ID or generate a new UUID."""
     if value:
@@ -50,6 +75,16 @@ def normalize_request_id(value: str | None) -> str:
         except (ValueError, AttributeError):
             pass
     return str(uuid4())
+
+
+def normalize_user_id(value: Any) -> int | None:
+    """Accept a numeric user id or return None."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_sensitive_key(key: str) -> bool:
@@ -84,6 +119,9 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "request_id": get_request_id(),
         }
+        user_id = get_user_id()
+        if user_id is not None:
+            payload["user_id"] = user_id
         for key, value in record.__dict__.items():
             if key not in _RESERVED_LOG_RECORD_FIELDS and key not in payload:
                 payload[key] = _sanitize(value, key)
@@ -123,6 +161,11 @@ def configure_logging() -> None:
     access_logger.handlers.clear()
     access_logger.propagate = False
     access_logger.disabled = True
+
+    for name in _NOISY_LOGGERS:
+        noisy = logging.getLogger(name)
+        noisy.setLevel(logging.WARNING)
+        noisy.propagate = True
 
 
 def log_event(

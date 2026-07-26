@@ -8,6 +8,7 @@ or import `build_agent` / `run_agent` to serve it (see server.py).
 """
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -28,6 +29,8 @@ from logging_config import (
     configure_logging,
     get_request_id,
     log_event,
+    normalize_user_id,
+    set_user_id,
 )
 
 load_dotenv()
@@ -80,6 +83,70 @@ def request_id_httpx_client_factory(
     return httpx.AsyncClient(headers=outbound_headers, timeout=timeout, auth=auth)
 
 
+def _parse_tool_payload(result: MCPToolCallResult) -> dict | None:
+    """Best-effort JSON object extraction from an MCP tool result."""
+    content = getattr(result, "content", None)
+    texts: list[str] = []
+    if isinstance(content, str):
+        texts.append(content)
+    elif isinstance(content, list):
+        for block in content:
+            if isinstance(block, str):
+                texts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                texts.append(block["text"])
+            else:
+                text = getattr(block, "text", None)
+                if isinstance(text, str):
+                    texts.append(text)
+    for text in texts:
+        try:
+            payload = json.loads(text)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _safe_tool_result_fields(tool_name: str, result: MCPToolCallResult) -> dict:
+    """Extract correlatable business fields without secrets or full replies."""
+    if getattr(result, "isError", False):
+        return {}
+    payload = _parse_tool_payload(result)
+    if not payload:
+        return {}
+
+    if tool_name == "login":
+        user_id = payload.get("user_id")
+        return {"user_id": user_id} if user_id is not None else {}
+
+    if tool_name == "get_portfolio":
+        holdings = payload.get("holdings") or []
+        if not isinstance(holdings, list):
+            return {}
+        tickers = [
+            item.get("ticker")
+            for item in holdings
+            if isinstance(item, dict) and item.get("ticker")
+        ]
+        fields: dict = {
+            "holdings_count": len(holdings),
+            "tickers": tickers,
+            "holdings_summary": [
+                {"ticker": item.get("ticker"), "shares": item.get("shares")}
+                for item in holdings
+                if isinstance(item, dict)
+            ],
+        }
+        # get_portfolio args already have user_id; include it when present on payload.
+        if payload.get("user_id") is not None:
+            fields["user_id"] = payload["user_id"]
+        return fields
+
+    return {}
+
+
 async def mcp_tool_logging_interceptor(
     request: MCPToolCallRequest,
     handler: Callable[[MCPToolCallRequest], Awaitable[MCPToolCallResult]],
@@ -96,6 +163,9 @@ async def mcp_tool_logging_interceptor(
         "upstream": request.server_name,
         "argument_keys": sorted(request.args),
     }
+    if request.name == "get_portfolio" and "user_id" in request.args:
+        fields["user_id"] = request.args["user_id"]
+
     started = time.perf_counter()
     log_event(
         logger,
@@ -123,6 +193,14 @@ async def mcp_tool_logging_interceptor(
     result_fields = dict(fields)
     if event == "mcp.tool.failed":
         result_fields["error_type"] = "MCPToolError"
+    else:
+        result_fields.update(_safe_tool_result_fields(request.name, result))
+        # Once login (or portfolio) reveals the user, stamp the rest of this request.
+        bound_user_id = normalize_user_id(result_fields.get("user_id"))
+        if bound_user_id is not None:
+            set_user_id(bound_user_id)
+            if request.name == "get_portfolio" and "user_id" not in fields:
+                fields["user_id"] = bound_user_id
     log_event(
         logger,
         level,

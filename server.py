@@ -23,8 +23,11 @@ from logging_config import (
     REQUEST_ID_HEADER,
     log_event,
     normalize_request_id,
+    normalize_user_id,
     reset_request_id,
+    reset_user_id,
     set_request_id,
+    set_user_id,
 )
 
 # Comma-separated list of allowed browser origins for the frontend.
@@ -54,7 +57,8 @@ app.add_middleware(
 async def request_context(request: Request, call_next):
     """Correlate each request and emit content-free HTTP lifecycle logs."""
     request_id = normalize_request_id(request.headers.get(REQUEST_ID_HEADER))
-    token = set_request_id(request_id)
+    request_token = set_request_id(request_id)
+    user_token = set_user_id(None)
     started = time.perf_counter()
     fields = {"method": request.method, "path": request.url.path}
     log_event(
@@ -90,7 +94,8 @@ async def request_context(request: Request, call_next):
         )
         return response
     finally:
-        reset_request_id(token)
+        reset_user_id(user_token)
+        reset_request_id(request_token)
 
 
 async def get_agent(app: FastAPI):
@@ -104,6 +109,7 @@ async def get_agent(app: FastAPI):
 
 class ChatRequest(BaseModel):
     message: str
+    user_id: int | None = None
 
 
 class ChatResponse(BaseModel):
@@ -118,6 +124,9 @@ async def health() -> dict:
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
     started = time.perf_counter()
+    bound_user_id = normalize_user_id(req.user_id)
+    if bound_user_id is not None:
+        set_user_id(bound_user_id)
     log_event(
         logger,
         logging.INFO,

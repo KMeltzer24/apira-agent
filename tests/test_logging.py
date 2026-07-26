@@ -25,6 +25,8 @@ from logging_config import (
     log_event,
     reset_request_id,
     set_request_id,
+    set_user_id,
+    reset_user_id,
 )
 
 
@@ -79,6 +81,25 @@ class JsonLoggingTests(unittest.TestCase):
             }.issubset(record)
         )
 
+    def test_json_output_includes_user_id_context(self) -> None:
+        capture = LogCapture("test.user")
+        request_token = set_request_id("4b45ab5f-b1f5-45cd-9248-f7ad7d20caaa")
+        user_token = set_user_id(1)
+        try:
+            log_event(
+                capture.logger,
+                logging.INFO,
+                "test.with_user",
+                "Event with user context",
+            )
+        finally:
+            reset_user_id(user_token)
+            reset_request_id(request_token)
+
+        record = capture.records()[0]
+        self.assertEqual(record["user_id"], 1)
+        self.assertEqual(record["event"], "test.with_user")
+
 
 class CorrelationTests(unittest.IsolatedAsyncioTestCase):
     async def test_request_id_is_in_langgraph_metadata(self) -> None:
@@ -109,7 +130,10 @@ class CorrelationTests(unittest.IsolatedAsyncioTestCase):
         async def handler(outbound_request):
             nonlocal seen_request
             seen_request = outbound_request
-            return SimpleNamespace(isError=False)
+            return SimpleNamespace(
+                isError=False,
+                content=[{"type": "text", "text": '{"user_id": 1, "success": true}'}],
+            )
 
         token = set_request_id(request_id)
         try:
@@ -121,8 +145,43 @@ class CorrelationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen_request.headers[REQUEST_ID_HEADER], request_id)
         output = capture.stream.getvalue()
         self.assertIn('"argument_keys":["password","username"]', output)
+        self.assertIn('"user_id":1', output)
         self.assertNotIn("alice", output)
         self.assertNotIn("very-secret", output)
+
+    async def test_portfolio_tool_logs_tickers_without_prompt_text(self) -> None:
+        capture = LogCapture("agent")
+        request = MCPToolCallRequest(
+            name="get_portfolio",
+            args={"user_id": 1},
+            server_name="apira",
+        )
+
+        async def handler(_outbound_request):
+            return SimpleNamespace(
+                isError=False,
+                content=[
+                    {
+                        "type": "text",
+                        "text": json.dumps(
+                            {
+                                "holdings": [
+                                    {"ticker": "AAPL", "shares": 150},
+                                    {"ticker": "TSLA", "shares": 60},
+                                ]
+                            }
+                        ),
+                    }
+                ],
+            )
+
+        with patch("agent.logger", capture.logger):
+            await mcp_tool_logging_interceptor(request, handler)
+
+        output = capture.stream.getvalue()
+        self.assertIn('"tickers":["AAPL","TSLA"]', output)
+        self.assertIn('"user_id":1', output)
+        self.assertNotIn("password", output)
 
     async def test_http_client_factory_reads_current_request_id_each_time(self) -> None:
         first = "c4af7aa7-bdd9-4b2e-9343-30b0a18da3e2"
