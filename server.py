@@ -60,12 +60,16 @@ async def request_context(request: Request, call_next):
     request_token = set_request_id(request_id)
     user_token = set_user_id(None)
     started = time.perf_counter()
-    fields = {"method": request.method, "path": request.url.path}
+    method = request.method
+    path = request.url.path
+    fields = {"method": method, "path": path}
+    # Health probes are high-volume; keep them at DEBUG.
+    http_level = logging.DEBUG if path == "/health" else logging.INFO
     log_event(
         logger,
-        logging.INFO,
+        http_level,
         "http.request.started",
-        "HTTP request started",
+        f"HTTP {method} {path} started",
         **fields,
     )
     try:
@@ -75,7 +79,7 @@ async def request_context(request: Request, call_next):
             logger,
             logging.ERROR,
             "http.request.failed",
-            "HTTP request failed",
+            f"HTTP {method} {path} failed ({type(exc).__name__})",
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             error_type=type(exc).__name__,
             **fields,
@@ -85,9 +89,9 @@ async def request_context(request: Request, call_next):
         response.headers[REQUEST_ID_HEADER] = request_id
         log_event(
             logger,
-            logging.INFO,
+            http_level,
             "http.request.completed",
-            "HTTP request completed",
+            f"HTTP {method} {path} completed ({response.status_code})",
             status_code=response.status_code,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             **fields,
@@ -131,7 +135,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
         logger,
         logging.INFO,
         "chat.started",
-        "Chat request started",
+        f"Chat request started ({len(req.message)} chars)",
         message_length=len(req.message),
     )
     try:
@@ -141,7 +145,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
             logger,
             logging.ERROR,
             "chat.failed",
-            "Chat request failed",
+            f"Chat failed while building agent ({type(exc).__name__})",
             message_length=len(req.message),
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             error_type=type(exc).__name__,
@@ -154,7 +158,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
             logger,
             logging.ERROR,
             "chat.failed",
-            "Chat request failed",
+            f"Chat run failed; returning error reply ({type(exc).__name__})",
             message_length=len(req.message),
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             error_type=type(exc).__name__,

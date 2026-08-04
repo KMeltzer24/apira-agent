@@ -27,6 +27,9 @@ _SENSITIVE_KEY_PARTS = (
     "token",
 )
 # Third-party HTTP clients spam INFO with full URLs (e.g. Gemini).
+# langchain_google_genai warns on every MCP tool schema field Gemini ignores
+# (additionalProperties, $schema) — harmless but floods Grafana.
+# mcp.client.streamable_http logs session negotiate / reconnect chatter.
 _NOISY_LOGGERS = (
     "httpx",
     "httpcore",
@@ -34,6 +37,8 @@ _NOISY_LOGGERS = (
     "google.genai",
     "urllib3",
     "openai",
+    "langchain_google_genai._function_utils",
+    "mcp.client.streamable_http",
 )
 
 
@@ -164,7 +169,11 @@ def configure_logging() -> None:
 
     for name in _NOISY_LOGGERS:
         noisy = logging.getLogger(name)
-        noisy.setLevel(logging.WARNING)
+        # Drop WARNING spam from Gemini schema sanitization; keep ERROR+.
+        if name.endswith("_function_utils"):
+            noisy.setLevel(logging.ERROR)
+        else:
+            noisy.setLevel(logging.WARNING)
         noisy.propagate = True
 
 

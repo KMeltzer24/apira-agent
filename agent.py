@@ -171,7 +171,7 @@ async def mcp_tool_logging_interceptor(
         logger,
         logging.INFO,
         "mcp.tool.started",
-        "MCP tool call started",
+        f"MCP tool {request.name} started",
         **fields,
     )
     try:
@@ -181,7 +181,7 @@ async def mcp_tool_logging_interceptor(
             logger,
             logging.ERROR,
             "mcp.tool.failed",
-            "MCP tool call failed",
+            f"MCP tool {request.name} failed",
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             error_type=type(exc).__name__,
             **fields,
@@ -201,11 +201,15 @@ async def mcp_tool_logging_interceptor(
             set_user_id(bound_user_id)
             if request.name == "get_portfolio" and "user_id" not in fields:
                 fields["user_id"] = bound_user_id
+    if event == "mcp.tool.failed":
+        message = f"MCP tool {request.name} returned an error"
+    else:
+        message = f"MCP tool {request.name} completed via {request.server_name}"
     log_event(
         logger,
         level,
         event,
-        "MCP tool call failed" if event == "mcp.tool.failed" else "MCP tool call completed",
+        message,
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
         **result_fields,
     )
