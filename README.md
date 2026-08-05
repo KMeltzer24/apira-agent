@@ -10,7 +10,6 @@ Built with **LangChain**, **LangGraph**, and **langchain-mcp-adapters**. It runs
 
 **Logging contract:** [apira/docs/logging.md](https://github.com/KMeltzer24/apira/blob/main/docs/logging.md).
 **How logging works:** [apira/docs/how-logging-works.md](https://github.com/KMeltzer24/apira/blob/main/docs/how-logging-works.md).
-**Logging:** [apira/docs/how-logging-works.md](https://github.com/KMeltzer24/apira/blob/main/docs/how-logging-works.md).
 
 **Related repos:**
 
