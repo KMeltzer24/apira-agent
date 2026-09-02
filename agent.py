@@ -1,7 +1,7 @@
-"""Apira agent — a LangGraph agent that uses Apira's MCP tools.
+"""Apira agent — LangGraph supervisor + specialists over MCP tools.
 
 It connects to apira-mcp for backend tools and apira-rag for research tools,
-then runs a user prompt through the Gemini API.
+then runs a user prompt through a supervisor graph (Gemini).
 
 Run directly (`python agent.py`) for a one-shot demo with a hard-coded prompt,
 or import `build_agent` / `run_agent` to serve it (see server.py).
@@ -16,7 +16,6 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 from dotenv import load_dotenv
-from langchain.agents import create_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.interceptors import (
@@ -24,6 +23,7 @@ from langchain_mcp_adapters.interceptors import (
     MCPToolCallResult,
 )
 
+from graph import compile_supervisor_graph, reset_supervisor_hops
 from logging_config import (
     REQUEST_ID_HEADER,
     configure_logging,
@@ -54,20 +54,6 @@ DEFAULT_PROMPT = (
     "user's portfolio and summarize the holdings."
 )
 
-SYSTEM_PROMPT = (
-    "You are a portfolio assistant for the Apira system. "
-    "You have tools to log in a user, fetch a portfolio, search stock research "
-    "files on disk via searchLocalFolder, and semantic search via searchVectorDB (pgvector). "
-    "To get a portfolio you first need the user_id returned by the login tool. "
-    "Always log in first, then call get_portfolio with that user_id. "
-    "Report the holdings clearly to the user. "
-    "For stock recommendations: follow the user's instruction about which research tool to use — "
-    "searchLocalFolder OR searchVectorDB, never both unless explicitly asked. "
-    "After fetching the portfolio, search per ticker with the chosen tool. "
-    "Format each holding as: ticker and action (Hold/Add/Trim), then cited filenames, "
-    "then one or two short sentences of reasoning. "
-    "Be concise — no sector overview, no holdings summary list."
-)
 
 
 def request_id_httpx_client_factory(
@@ -248,7 +234,7 @@ async def build_agent():
         model = ChatGoogleGenerativeAI(
             model=GEMINI_MODEL, temperature=0, max_retries=0
         )
-        agent = create_agent(model, tools, system_prompt=SYSTEM_PROMPT)
+        agent = compile_supervisor_graph(model, tools)
     except Exception as exc:
         log_event(
             logger,
@@ -269,6 +255,7 @@ async def build_agent():
         model=GEMINI_MODEL,
         tool_count=len(tools),
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        agent_name="supervisor",
     )
     return agent
 
@@ -293,7 +280,8 @@ def _as_text(content) -> str:
 
 
 async def run_agent(agent, prompt: str) -> str:
-    """Run one user prompt through the agent and return the final text answer."""
+    """Run one user prompt through the supervisor graph and return the final text."""
+    reset_supervisor_hops()
     started = time.perf_counter()
     log_event(
         logger,
@@ -302,6 +290,7 @@ async def run_agent(agent, prompt: str) -> str:
         "Agent run started",
         prompt_length=len(prompt),
         model=GEMINI_MODEL,
+        agent_name="supervisor",
     )
     try:
         result = await agent.ainvoke(
@@ -319,6 +308,7 @@ async def run_agent(agent, prompt: str) -> str:
             model=GEMINI_MODEL,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             error_type=type(exc).__name__,
+            agent_name="supervisor",
         )
         raise
 
@@ -331,6 +321,7 @@ async def run_agent(agent, prompt: str) -> str:
         reply_length=len(reply),
         model=GEMINI_MODEL,
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        agent_name="supervisor",
     )
     return reply
 

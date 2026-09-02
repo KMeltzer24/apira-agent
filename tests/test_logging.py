@@ -100,6 +100,20 @@ class JsonLoggingTests(unittest.TestCase):
         self.assertEqual(record["user_id"], 1)
         self.assertEqual(record["event"], "test.with_user")
 
+    def test_agent_name_is_not_redacted(self) -> None:
+        capture = LogCapture("test.agent_name")
+        log_event(
+            capture.logger,
+            logging.INFO,
+            "agent.run.completed",
+            "supervisor routed to portfolio",
+            agent_name="supervisor",
+            next_node="portfolio",
+        )
+        record = capture.records()[0]
+        self.assertEqual(record["agent_name"], "supervisor")
+        self.assertEqual(record["next_node"], "portfolio")
+
 
 class CorrelationTests(unittest.IsolatedAsyncioTestCase):
     async def test_request_id_is_in_langgraph_metadata(self) -> None:

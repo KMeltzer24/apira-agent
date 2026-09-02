@@ -2,7 +2,7 @@
 
 A Python agent that uses [apira-mcp](https://github.com/KMeltzer24/apira-mcp) for backend tools and [apira-rag](https://github.com/KMeltzer24/apira-rag) for stock-research tools — driven by **Google Gemini**.
 
-Built with **LangChain**, **LangGraph**, and **langchain-mcp-adapters**. It runs on **EC2** in Docker, alongside the backend and MCP server — the frontend's **Agent Chat** and **Recommender** pages call it there.
+Built with **LangChain**, **LangGraph**, and **langchain-mcp-adapters**. Run it in Docker on your **Mac** ([apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md)) or on **EC2**. Agent Chat and Recommender call `POST /chat` on port 8100.
 
 **Full write-up:** [docs/how-the-agent-works.md](docs/how-the-agent-works.md) — what we built, how it works, and how to test it.
 
@@ -22,32 +22,40 @@ Built with **LangChain**, **LangGraph**, and **langchain-mcp-adapters**. It runs
 
 Apira uses **both**:
 
-- **LangChain** provides `create_agent`, the Gemini integration (`ChatGoogleGenerativeAI`), and the MCP adapter used to load tools.
-- **LangGraph** is the execution engine underneath LangChain's `create_agent`. It runs the agent loop: send context to Gemini, execute requested MCP tools, return tool results to Gemini, and repeat until the model produces a final answer.
+- **LangChain** provides `create_agent` (specialist subgraphs), Gemini (`ChatGoogleGenerativeAI`), and the MCP adapter.
+- **LangGraph** owns the parent graph: named nodes and edges, not a hidden `create_agent` loop.
 
-We use LangChain's high-level `create_agent` API, so this project does not manually define LangGraph nodes or edges. The workflow is still executed by LangGraph.
+```
+START → supervisor → portfolio | research → supervisor → END
+```
 
-In short: **LangChain supplies the agent API and integrations; LangGraph runs the underlying workflow.**
+| Node | Role | MCP tools |
+|------|------|-----------|
+| **supervisor** | Chat agent: answer directly or route | none |
+| **portfolio** | Login and holdings | `login`, `get_portfolio` |
+| **research** | Citations and Hold/Add/Trim | `searchLocalFolder`, `searchVectorDB` |
+
+Agent Chat and Stock Recommender both `POST /chat`; the supervisor decides which specialist(s) to run. Login and the FastAPI services stay tools, not agents.
 
 ## How it works
 
 ```
 agent.py / server.py (prompt)
   ▼
-LangGraph agent + Gemini
-  │  loads tools over MCP, decides which to call
+LangGraph StateGraph + Gemini
+  │  supervisor routes; specialists call MCP
   ▼
-├── apira-mcp (:8000/mcp)
+├── portfolio → apira-mcp (:8000/mcp)
 │   ├── login → user-service
 │   └── get_portfolio → portfolio-service
-└── apira-rag (:8200/mcp)
+└── research → apira-rag (:8200/mcp)
     ├── searchLocalFolder → stock-research/ on EC2
     └── searchVectorDB → RDS pgvector (research_chunks)
 ```
 
-The agent loads tools from both MCP servers at runtime. Given the prompt, the model calls `login` first to get a `user_id`, then `get_portfolio` with that id. For recommendations it uses exactly the research tool requested by the frontend.
+The graph loads tools from both MCP servers at runtime and partitions them onto specialists. The supervisor sends holdings requests to **portfolio** and recommendation/search requests to **research** (portfolio first when holdings are not in the thread yet).
 
-`server.py` wraps the agent in a FastAPI service (the agent is built lazily on the first request, so the server boots instantly):
+`server.py` wraps the compiled graph in a FastAPI service (built lazily on the first request, so the server boots instantly):
 
 | Endpoint | Purpose |
 |----------|---------|
@@ -60,7 +68,7 @@ The agent runs on EC2 next to the backend and both MCP servers, in Docker with `
 
 ```bash
 tar czf /tmp/apira-agent-deploy.tgz \
-  agent.py server.py logging_config.py requirements.txt Dockerfile .dockerignore docker-compose.yml .env.example
+  agent.py graph.py server.py logging_config.py requirements.txt Dockerfile .dockerignore docker-compose.yml .env.example
 
 scp -i ../apira/my-ec2-key.pem /tmp/apira-agent-deploy.tgz ec2-user@<EC2_PUBLIC_IP>:/tmp/
 
@@ -113,7 +121,7 @@ curl -X POST http://<EC2_PUBLIC_IP>:8100/chat \
 
 The API accepts or generates an `X-Request-ID`, returns it to the caller, and
 propagates it through LangGraph and calls to both MCP servers. JSON events on
-stdout cover HTTP requests, agent build/run lifecycle, and MCP tool calls,
+stdout cover HTTP requests, supervisor/specialist runs (`agent_name`), and MCP tool calls,
 including safe metadata such as durations and argument names. Prompts, replies,
 tool argument values, passwords, and keys are not logged.
 

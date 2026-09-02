@@ -1,6 +1,6 @@
 # How the Apira Agent Works
 
-A Python program that automatically logs in a user and retrieves their portfolio — by calling the Apira MCP tools, not the backend APIs directly. The LLM behind it is Google Gemini.
+A LangGraph **supervisor** that routes to **portfolio** and **research** specialists. Specialists call Apira MCP tools; the LLM is Google Gemini. Agent Chat is the supervisor, not a third specialist.
 
 ---
 
@@ -8,7 +8,8 @@ A Python program that automatically logs in a user and retrieves their portfolio
 
 | Piece | Choice |
 |-------|--------|
-| Orchestration | **LangGraph** (`create_agent`) |
+| Orchestration | **LangGraph** `StateGraph` (`START` → `supervisor` → `portfolio` / `research` → `supervisor` → `END`) |
+| Specialists | LangChain `create_agent` subgraphs with partitioned MCP tools |
 | Tool loading | **langchain-mcp-adapters** |
 | Model | **Gemini** (`gemini-3.1-flash-lite`, via API key) |
 | Tool sources | **apira-mcp** (`login`, `get_portfolio`) + **apira-rag** (`searchLocalFolder`, `searchVectorDB`) |
@@ -22,20 +23,20 @@ The agent is a client of both MCP servers, in its own repo separate from [apira]
 ```
 agent.py / server.py (prompt)
   ▼
-LangGraph agent + Gemini
-  ▼
-├── apira-mcp (:8000/mcp) → backend APIs (:8001 / :8002) → RDS
-└── apira-rag (:8200/mcp)
-    ├── stock-research files on EC2 (searchLocalFolder)
-    └── research_chunks in RDS (searchVectorDB / pgvector)
+LangGraph StateGraph + Gemini
+  ├── supervisor (no MCP tools) — chat + routing
+  ├── portfolio → apira-mcp (:8000/mcp) → backend APIs (:8001 / :8002) → RDS
+  └── research → apira-rag (:8200/mcp)
+      ├── stock-research files on EC2 (searchLocalFolder)
+      └── research_chunks in RDS (searchVectorDB / pgvector)
 ```
 
-1. Connect to both MCP servers and load `login`, `get_portfolio`, `searchLocalFolder`, and `searchVectorDB`.
-2. `create_agent` wires the model to those tools with a system prompt: log in first to get a `user_id`, then fetch the portfolio; for recommendations, use the research tool specified in the user message (local folder or vector DB).
-3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio").
-4. The model calls `login` → gets `user_id`, then `get_portfolio(user_id)`, then summarizes. For recommendations it calls the selected research tool per ticker and cites files.
+1. Connect to both MCP servers and load tools. Partition: `login` / `get_portfolio` onto **portfolio**; `searchLocalFolder` / `searchVectorDB` onto **research**.
+2. Compile a parent graph. The supervisor uses structured output (`portfolio` | `research` | `finish`). Specialists keep their own system prompts (login then holdings; one research tool unless asked for both; Hold/Add/Trim with citations).
+3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio"): supervisor → portfolio → supervisor → END.
+4. For recommendations: supervisor → portfolio → supervisor → research → supervisor → END.
 
-The agent never hardcodes the API shape — it discovers the tools at runtime and the LLM chains them itself.
+The agent never hardcodes the API shape — it discovers tools at runtime. Login, user-service, portfolio-service, and RAG stay tools/services, not graph agents.
 
 ---
 
@@ -60,10 +61,10 @@ Config lives in `.env`: `MCP_URL`, `RAG_MCP_URL` (both must end in `/mcp`), `LLM
 the response, and keeps it active throughout the agent run. `agent.py`
 propagates that ID in LangGraph metadata and to both MCP servers.
 
-Structured JSON events cover HTTP requests, agent build/run lifecycle, and MCP
-tool calls. Events include safe metadata such as durations, model/tool names,
-argument names, and result sizes. They omit prompts, replies, tool argument
-values, credentials, and API keys. Follow them on EC2 with:
+Structured JSON events cover HTTP requests, agent build/run lifecycle (`agent_name`:
+`supervisor`, `portfolio`, or `research`), and MCP tool calls. Events include safe
+metadata such as durations, model/tool names, argument names, and result sizes.
+They omit prompts, replies, tool argument values, credentials, and API keys. Follow them on EC2 with:
 
 ```bash
 cd ~/apira-agent
@@ -145,4 +146,5 @@ This is deployed on EC2 (port 8100); see the EC2 section in the [README](../READ
 ## Notes
 
 - Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-google-genai 4.2.5, fastapi 0.138.0.
+- Parent graph lives in `graph.py`; MCP client and `POST /chat` stay in `agent.py` / `server.py`.
 - `agent.py` uses a default prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each request.
