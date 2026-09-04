@@ -62,7 +62,23 @@ The graph loads tools from both MCP servers at runtime and partitions them onto 
 | `GET /health` | Liveness check |
 | `POST /chat` | `{ "message": "..." }` → `{ "reply": "..." }` |
 
-## Deploy on EC2 (primary)
+## Promptfoo
+
+Eval the **full** LangGraph run (final `reply` only — not each specialist separately) via [promptfooconfig.yaml](promptfooconfig.yaml).
+
+Prerequisites: local stack + agent healthy ([apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md)).
+
+```bash
+curl -s http://localhost:8100/health
+# {"status":"ok"}
+
+cd ~/development/apira-agent
+REQUEST_TIMEOUT_MS=180000 npx promptfoo@latest eval
+```
+
+Three cases: supervisor chat, alice portfolio (expects AAPL/MSFT), recommender with `searchLocalFolder` only.
+
+## Deploy on EC2 (optional)
 
 The agent runs on EC2 next to the backend and both MCP servers, in Docker with `restart: unless-stopped`. From your Mac, in this repo root:
 

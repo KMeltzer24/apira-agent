@@ -1,0 +1,88 @@
+# Promptfoo evals for the Apira LangGraph supervisor (POST /chat).
+# Scores the full multi-agent run (final reply), not each specialist separately.
+#
+# Prerequisites: local stack up (see apira/docs/run-locally.md), then:
+#   curl -s http://localhost:8100/health
+#   REQUEST_TIMEOUT_MS=180000 npx promptfoo@latest eval
+#
+# To point at another host, edit providers[0].config.url below.
+
+description: Apira LangGraph supervisor + specialists
+
+prompts:
+  - "{{prompt}}"
+
+providers:
+  - id: http
+    label: apira-agent-chat
+    config:
+      url: http://localhost:8100/chat
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        message: "{{prompt}}"
+      transformResponse: json.reply
+      maxRetries: 1
+
+evaluateOptions:
+  maxConcurrency: 1
+
+tests:
+  - description: supervisor chat — capabilities without tools
+    vars:
+      prompt: "What can you help me with in Apira? Keep it short."
+    assert:
+      - type: not-icontains
+        value: "The agent hit an error"
+      - type: not-icontains
+        value: "Traceback"
+      - type: javascript
+        value: |
+          const t = (output || "").toLowerCase();
+          return (
+            t.includes("portfolio") ||
+            t.includes("login") ||
+            t.includes("holdings") ||
+            t.includes("research") ||
+            t.includes("recommend") ||
+            t.includes("stock")
+          );
+
+  - description: portfolio path — alice holdings via login
+    vars:
+      prompt: >-
+        Log in as user 'alice' with password 'password', then retrieve that
+        user's portfolio and summarize the holdings.
+    assert:
+      - type: not-icontains
+        value: "The agent hit an error"
+      - type: icontains
+        value: AAPL
+      - type: icontains
+        value: MSFT
+      - type: not-icontains
+        value: NVDA
+
+  - description: recommender path — local folder only
+    vars:
+      prompt: >-
+        Log in as alice with password password. Fetch the portfolio. Use
+        searchLocalFolder ONLY (never searchVectorDB) to research each holding.
+        For each ticker give Hold, Add, or Trim with a short reason and cite
+        filenames when possible.
+    assert:
+      - type: not-icontains
+        value: "The agent hit an error"
+      - type: javascript
+        value: |
+          const t = (output || "").toLowerCase();
+          return (
+            t.includes("hold") ||
+            t.includes("add") ||
+            t.includes("trim")
+          );
+      - type: not-icontains
+        value: searchVectorDB
+      - type: not-icontains
+        value: "vector db"

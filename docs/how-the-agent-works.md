@@ -143,6 +143,23 @@ This is deployed on EC2 (port 8100); see the EC2 section in the [README](../READ
 
 ---
 
+## Promptfoo
+
+[promptfooconfig.yaml](../promptfooconfig.yaml) sends the same prompts as Agent Chat / Recommender to `POST /chat` and asserts on the final `reply`. It does **not** score supervisor, portfolio, and research as three separate Promptfoo agents — one HTTP call runs the whole graph.
+
+```bash
+curl -s http://localhost:8100/health
+REQUEST_TIMEOUT_MS=180000 npx promptfoo@latest eval
+```
+
+| Case | What it exercises |
+|------|-------------------|
+| Capabilities question | Supervisor can finish without tools |
+| Alice portfolio | Supervisor → portfolio specialist |
+| Local-folder recommender | Supervisor → portfolio → research (`searchLocalFolder`) |
+
+---
+
 ## Notes
 
 - Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-google-genai 4.2.5, fastapi 0.138.0.

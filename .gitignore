@@ -4,3 +4,8 @@ __pycache__
 venv
 .env
 .DS_Store
+
+# Promptfoo
+.promptfoo/
+promptfoo-output/
+output/
