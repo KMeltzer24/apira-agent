@@ -38,7 +38,7 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 # Always set via .env / docker-compose. This fallback matches the in-container
-# EC2 deployment (the agent container reaches the MCP container's published port).
+# default (the agent reaches MCP via the host-published port).
 MCP_URL = os.environ.get("MCP_URL", "http://host.docker.internal:8000/mcp")
 RAG_MCP_URL = os.environ.get(
     "RAG_MCP_URL", "http://host.docker.internal:8200/mcp"

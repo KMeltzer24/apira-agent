@@ -25,10 +25,10 @@ agent.py / server.py (prompt)
   ▼
 LangGraph StateGraph + Gemini
   ├── supervisor (no MCP tools) — chat + routing
-  ├── portfolio → apira-mcp (:8000/mcp) → backend APIs (:8001 / :8002) → RDS
+  ├── portfolio → apira-mcp (:8000/mcp) → backend APIs (:8001 / :8002) → Postgres
   └── research → apira-rag (:8200/mcp)
-      ├── stock-research files on EC2 (searchLocalFolder)
-      └── research_chunks in RDS (searchVectorDB / pgvector)
+      ├── stock-research/ files (searchLocalFolder)
+      └── research_chunks in Postgres (searchVectorDB / pgvector)
 ```
 
 1. Connect to both MCP servers and load tools. Partition: `login` / `get_portfolio` onto **portfolio**; `searchLocalFolder` / `searchVectorDB` onto **research**.
@@ -51,7 +51,7 @@ pip install -r requirements.txt
 cp .env.example .env              # set GOOGLE_API_KEY (aistudio.google.com/apikey)
 ```
 
-Config lives in `.env`: `MCP_URL`, `RAG_MCP_URL` (both must end in `/mcp`), `LLM_MODEL`, and `GOOGLE_API_KEY`.
+Config lives in `.env`: `MCP_URL`, `RAG_MCP_URL` (both must end in `/mcp`), `LLM_MODEL`, and `GOOGLE_API_KEY`. Full stack: [apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md).
 
 ---
 
@@ -64,11 +64,11 @@ propagates that ID in LangGraph metadata and to both MCP servers.
 Structured JSON events cover HTTP requests, agent build/run lifecycle (`agent_name`:
 `supervisor`, `portfolio`, or `research`), and MCP tool calls. Events include safe
 metadata such as durations, model/tool names, argument names, and result sizes.
-They omit prompts, replies, tool argument values, credentials, and API keys. Follow them on EC2 with:
+They omit prompts, replies, tool argument values, credentials, and API keys. Follow them locally with:
 
 ```bash
 cd ~/apira-agent
-sudo docker compose logs -f agent
+docker compose logs -f agent
 ```
 
 Use the same request ID in the MCP, RAG, and backend container logs to trace one
@@ -83,11 +83,10 @@ There are two entry points: a hardcoded one-shot prompt, and the custom-prompt A
 
 ### Hardcoded prompt (the assignment demo)
 
-`agent.py` runs the hardcoded `DEFAULT_PROMPT` ("log in as alice, then summarize the portfolio"). Run it inside the deployed container so it inherits the container's `MCP_URL` and `GOOGLE_API_KEY`:
+`agent.py` runs the hardcoded `DEFAULT_PROMPT` ("log in as alice, then summarize the portfolio"). Run it inside the container so it inherits `MCP_URL` and `GOOGLE_API_KEY`:
 
 ```bash
-# on EC2
-sudo docker compose exec agent python agent.py
+docker compose exec agent python agent.py
 ```
 
 Expected (the exact wording varies — it's an LLM):
@@ -111,7 +110,7 @@ Here are your portfolio holdings:
 The **Agent Chat** page in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) sends whatever you type to the `/chat` API. The **Recommender** page sends a structured prompt with the selected research tool. To exercise Agent Chat directly:
 
 ```bash
-curl -s -X POST http://<EC2_PUBLIC_IP>:8100/chat \
+curl -s -X POST http://localhost:8100/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Log in as alice (password: password) and show my portfolio"}'
 ```
@@ -125,7 +124,7 @@ For the Recommender path, see [apira-rag/docs/how-stock-recommender-works.md](ht
 | `httpx.ConnectError: All connection attempts failed` | An MCP URL is unavailable | Check `MCP_URL`, `RAG_MCP_URL`, and both servers |
 | `DefaultCredentialsError` / 401 / 403 from Gemini | Missing or invalid `GOOGLE_API_KEY` | Set a valid key from aistudio.google.com/apikey |
 | `zsh: bad pattern: #` | Inline `#` comment after a command | Run the command alone, no trailing comment |
-| Timeout reaching the server | EC2 stopped or your IP changed | Start EC2; open inbound TCP 8000 for your IP |
+| Timeout reaching the server | Agent/MCP not running | Start local stack; `curl http://localhost:8100/health` |
 
 ---
 
@@ -133,13 +132,11 @@ For the Recommender path, see [apira-rag/docs/how-stock-recommender-works.md](ht
 
 `agent.py` is a one-shot CLI demo. For an interactive UI, `server.py` wraps the agent in a FastAPI service exposing `POST /chat` (`{ "message": "..." }` → `{ "reply": "..." }`). The agent is built lazily on the first request, so the server boots instantly.
 
-Run it with Docker (recommended — auto-restarts via `restart: unless-stopped`):
-
 ```bash
 docker compose up -d --build
 ```
 
-This is deployed on EC2 (port 8100); see the EC2 section in the [README](../README.md). The **Agent Chat** and **Recommender** pages in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) call this endpoint. The agent server stays in this repo (backend); the UI stays in the frontend (client) — same split as the rest of the project.
+Runs on port **8100**. The **Agent Chat** and **Recommender** pages in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) call this endpoint. The agent server stays in this repo (backend); the UI stays in the frontend (client) — same split as the rest of the project.
 
 ---
 
@@ -149,7 +146,8 @@ This is deployed on EC2 (port 8100); see the EC2 section in the [README](../READ
 
 ```bash
 curl -s http://localhost:8100/health
-REQUEST_TIMEOUT_MS=180000 npx promptfoo@latest eval
+REQUEST_TIMEOUT_MS=180000 promptfoo eval
+promptfoo view
 ```
 
 | Case | What it exercises |

@@ -4,7 +4,7 @@ services:
     ports:
       - "8100:8100"
     environment:
-      # Backend and research MCP servers on the EC2 host.
+      # Backend and research MCP servers on the host (host.docker.internal).
       - MCP_URL=${MCP_URL:-http://host.docker.internal:8000/mcp}
       - RAG_MCP_URL=${RAG_MCP_URL:-http://host.docker.internal:8200/mcp}
       - LLM_MODEL=${LLM_MODEL:-gemini-3.1-flash-lite}
