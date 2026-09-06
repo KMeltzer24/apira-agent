@@ -66,6 +66,8 @@ The graph loads tools from both MCP servers at runtime and partitions them onto 
 
 Eval the **full** LangGraph run (final `reply` only — not each specialist separately) via [promptfooconfig.yaml](promptfooconfig.yaml).
 
+**Demo write-up:** [docs/promptfoo.md](docs/promptfoo.md) — what it does, the three tests, how to run, limitations.
+
 Prerequisites: local stack + agent healthy ([apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md)).
 
 ```bash
