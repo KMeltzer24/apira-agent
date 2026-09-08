@@ -31,9 +31,9 @@ START → supervisor → portfolio | research → supervisor → END
 
 | Node | Role | MCP tools |
 |------|------|-----------|
-| **supervisor** | Chat agent: answer directly or route | none |
-| **portfolio** | Login and holdings | `login`, `get_portfolio` |
-| **research** | Citations and Hold/Add/Trim | `searchLocalFolder`, `searchVectorDB` |
+| **supervisor** | Chat agent: answer directly or route | none (`agents/supervisor/`) |
+| **portfolio** | Login and holdings | `login`, `get_portfolio` (`agents/portfolio_sub_agent/mcp_tools/`) |
+| **research** | Citations and Hold/Add/Trim | `searchLocalFolder`, `searchVectorDB` (`agents/research_sub_agent/mcp_tools/`) |
 
 Agent Chat and Stock Recommender both `POST /chat`; the supervisor decides which specialist(s) to run. Login and the FastAPI services stay tools, not agents.
 
@@ -53,7 +53,7 @@ LangGraph StateGraph + Gemini
     └── searchVectorDB → Postgres pgvector (research_chunks)
 ```
 
-The graph loads tools from both MCP servers at runtime and partitions them onto specialists. The supervisor sends holdings requests to **portfolio** and recommendation/search requests to **research** (portfolio first when holdings are not in the thread yet).
+The graph loads tools from a shared MCP client; each sub-agent keeps its own allowlist under `mcp_tools/` (`portfolio_sub_agent`, `research_sub_agent`). The supervisor answers or routes; specialists do not share tools with each other in the codebase.
 
 `server.py` wraps the compiled graph in a FastAPI service (built lazily on the first request, so the server boots instantly):
 
@@ -66,7 +66,7 @@ The graph loads tools from both MCP servers at runtime and partitions them onto 
 
 Eval the **full** LangGraph run (final `reply` only — not each specialist separately) via [promptfooconfig.yaml](promptfooconfig.yaml).
 
-**Demo write-up:** [docs/promptfoo.md](docs/promptfoo.md) — what it does, the three tests, how to run, limitations.
+**Demo write-up:** [docs/promptfoo.md](docs/promptfoo.md) — what it does, the four tests, how to run, limitations.
 
 Prerequisites: local stack + agent healthy ([apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md)).
 
@@ -80,7 +80,7 @@ REQUEST_TIMEOUT_MS=180000 promptfoo eval
 promptfoo view   # optional HTML report of the last run
 ```
 
-Three cases: supervisor chat, alice portfolio (expects AAPL/MSFT), recommender with `searchLocalFolder` only.
+Four cases: supervisor chat, alice portfolio (share counts), local-folder recommender, vector-DB recommender (needs ingest).
 
 ## Configuration
 

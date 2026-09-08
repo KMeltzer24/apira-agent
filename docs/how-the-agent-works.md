@@ -9,8 +9,8 @@ A LangGraph **supervisor** that routes to **portfolio** and **research** special
 | Piece | Choice |
 |-------|--------|
 | Orchestration | **LangGraph** `StateGraph` (`START` → `supervisor` → `portfolio` / `research` → `supervisor` → `END`) |
-| Specialists | LangChain `create_agent` subgraphs with partitioned MCP tools |
-| Tool loading | **langchain-mcp-adapters** |
+| Specialists | LangChain `create_agent` subgraphs in `agents/portfolio_sub_agent` and `agents/research_sub_agent` |
+| Tool loading | Shared **langchain-mcp-adapters** client; each sub-agent’s `mcp_tools` selects its allowlist |
 | Model | **Gemini** (`gemini-3.1-flash-lite`, via API key) |
 | Tool sources | **apira-mcp** (`login`, `get_portfolio`) + **apira-rag** (`searchLocalFolder`, `searchVectorDB`) |
 
@@ -31,8 +31,8 @@ LangGraph StateGraph + Gemini
       └── research_chunks in Postgres (searchVectorDB / pgvector)
 ```
 
-1. Connect to both MCP servers and load tools. Partition: `login` / `get_portfolio` onto **portfolio**; `searchLocalFolder` / `searchVectorDB` onto **research**.
-2. Compile a parent graph. The supervisor uses structured output (`portfolio` | `research` | `finish`). Specialists keep their own system prompts (login then holdings; one research tool unless asked for both; Hold/Add/Trim with citations).
+1. Connect to both MCP servers with one shared client. Each sub-agent loads only its tools via `mcp_tools/` (`login` / `get_portfolio` for portfolio; `searchLocalFolder` / `searchVectorDB` for research). `python_tools/` and `skills/` are placeholders.
+2. Compile a parent graph in `agents/graph.py`. The supervisor (`agents/supervisor/`) uses structured output (`portfolio` | `research` | `finish`). Specialists keep their own system prompts (login then holdings; one research tool unless asked for both; Hold/Add/Trim with citations).
 3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio"): supervisor → portfolio → supervisor → END.
 4. For recommendations: supervisor → portfolio → supervisor → research → supervisor → END.
 
@@ -161,5 +161,5 @@ promptfoo view
 ## Notes
 
 - Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-google-genai 4.2.5, fastapi 0.138.0.
-- Parent graph lives in `graph.py`; MCP client and `POST /chat` stay in `agent.py` / `server.py`.
+- Parent graph wiring lives in `agents/graph.py`; specialists and supervisor are separate packages under `agents/`. MCP client and `POST /chat` stay in `agent.py` / `server.py`.
 - `agent.py` uses a default prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each request.

@@ -228,13 +228,12 @@ async def build_agent():
             },
             tool_interceptors=[mcp_tool_logging_interceptor],
         )
-        tools = await client.get_tools()
         # max_retries=0 so a 429 (quota) fails fast instead of honoring Gemini's
         # multi-second retry delay and hanging the request.
         model = ChatGoogleGenerativeAI(
             model=GEMINI_MODEL, temperature=0, max_retries=0
         )
-        agent = compile_supervisor_graph(model, tools)
+        agent = await compile_supervisor_graph(model, client)
     except Exception as exc:
         log_event(
             logger,
@@ -253,7 +252,6 @@ async def build_agent():
         "agent.build.completed",
         "Agent build completed",
         model=GEMINI_MODEL,
-        tool_count=len(tools),
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
         agent_name="supervisor",
     )

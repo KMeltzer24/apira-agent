@@ -37,32 +37,65 @@ tests:
         value: "The agent hit an error"
       - type: not-icontains
         value: "Traceback"
+      - type: not-icontains
+        value: "503"
+      # Must mention account/holdings help AND research/recommendations (not a single vague keyword).
       - type: javascript
         value: |
           const t = (output || "").toLowerCase();
-          return (
+          if (t.length < 40) return false;
+          const account =
             t.includes("portfolio") ||
             t.includes("login") ||
             t.includes("holdings") ||
+            t.includes("account");
+          const research =
             t.includes("research") ||
             t.includes("recommend") ||
-            t.includes("stock")
-          );
+            t.includes("stock");
+          return account && research;
 
   - description: portfolio path — alice holdings via login
     vars:
       prompt: >-
         Log in as user 'alice' with password 'password', then retrieve that
-        user's portfolio and summarize the holdings.
+        user's portfolio and summarize the holdings. Include ticker and share
+        counts for every holding.
     assert:
       - type: not-icontains
         value: "The agent hit an error"
+      - type: not-icontains
+        value: "Traceback"
+      # Alice's full seeded portfolio (sql/local-seed.sql).
       - type: icontains
         value: AAPL
       - type: icontains
         value: MSFT
+      - type: icontains
+        value: GOOGL
+      - type: icontains
+        value: AMZN
+      - type: icontains
+        value: TSLA
+      # Bob-only tickers must not appear.
       - type: not-icontains
         value: NVDA
+      - type: not-icontains
+        value: META
+      # Share counts from seed (tolerant of formatting around the number).
+      - type: javascript
+        value: |
+          const t = output || "";
+          const has = (ticker, shares) =>
+            new RegExp(ticker + "[\\s\\S]{0,80}?" + shares + "\\b", "i").test(t) ||
+            new RegExp(shares + "[\\s\\S]{0,40}?" + ticker, "i").test(t);
+          return (
+            has("AAPL", "150") &&
+            has("MSFT", "80") &&
+            has("GOOGL", "25") &&
+            has("AMZN", "40") &&
+            has("TSLA", "60")
+          );
 
   - description: recommender path — local folder only
     vars:
@@ -74,15 +107,59 @@ tests:
     assert:
       - type: not-icontains
         value: "The agent hit an error"
-      - type: javascript
-        value: |
-          const t = (output || "").toLowerCase();
-          return (
-            t.includes("hold") ||
-            t.includes("add") ||
-            t.includes("trim")
-          );
+      - type: not-icontains
+        value: "Traceback"
+      - type: not-icontains
+        value: "503"
       - type: not-icontains
         value: searchVectorDB
       - type: not-icontains
         value: "vector db"
+      # Actions + alice tickers + at least one research filename citation.
+      - type: javascript
+        value: |
+          const t = (output || "").toLowerCase();
+          const actions = (t.match(/\b(hold|add|trim)\b/g) || []).length;
+          const tickers = ["aapl", "msft", "googl", "amzn", "tsla"].filter((x) =>
+            t.includes(x)
+          );
+          const citesFile =
+            /\.(md|txt)\b/i.test(output || "") ||
+            /aapl-outlook|msft-analysis|googl-notes|amzn-outlook|tsla-analysis|tech-sector/i.test(
+              output || ""
+            );
+          return actions >= 3 && tickers.length >= 3 && citesFile;
+
+  - description: recommender path — vector DB only
+    vars:
+      prompt: >-
+        Log in as alice with password password. Fetch the portfolio. Use
+        searchVectorDB ONLY (never searchLocalFolder) to research each holding.
+        For each ticker give Hold, Add, or Trim with a short reason and cite
+        source filenames when possible.
+    assert:
+      - type: not-icontains
+        value: "The agent hit an error"
+      - type: not-icontains
+        value: "Traceback"
+      - type: not-icontains
+        value: "503"
+      - type: not-icontains
+        value: searchLocalFolder
+      - type: not-icontains
+        value: "local folder"
+      # Actions + alice tickers + citation from the ingested corpus
+      # (analyst notes or extracted earnings files in research_chunks).
+      - type: javascript
+        value: |
+          const t = (output || "").toLowerCase();
+          const actions = (t.match(/\b(hold|add|trim)\b/g) || []).length;
+          const tickers = ["aapl", "msft", "googl", "amzn", "tsla"].filter((x) =>
+            t.includes(x)
+          );
+          const citesFile =
+            /\.(md|txt)\b/i.test(output || "") ||
+            /aapl-outlook|msft-analysis|googl-notes|amzn-outlook|tsla-analysis|tech-sector|earnings|from-pdf|from-sec/i.test(
+              output || ""
+            );
+          return actions >= 3 && tickers.length >= 3 && citesFile;

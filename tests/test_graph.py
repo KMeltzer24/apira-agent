@@ -1,41 +1,22 @@
-"""Tests for MCP tool partition and the supervisor StateGraph."""
+"""Tests for supervisor StateGraph wiring and decision parsing."""
 
 from __future__ import annotations
 
+import asyncio
 import unittest
-from types import SimpleNamespace
-
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.tools import tool
 
-from graph import (
-    PORTFOLIO_TOOL_NAMES,
-    RESEARCH_TOOL_NAMES,
-    compile_supervisor_graph,
-    parse_supervisor_decision,
-    partition_mcp_tools,
-)
+from agents.graph import compile_supervisor_graph
+from agents.supervisor.agent import parse_supervisor_decision
 
 
-class PartitionTests(unittest.TestCase):
-    def test_splits_known_tools_and_reports_others(self) -> None:
-        tools = [
-            SimpleNamespace(name="login"),
-            SimpleNamespace(name="get_portfolio"),
-            SimpleNamespace(name="searchLocalFolder"),
-            SimpleNamespace(name="searchVectorDB"),
-            SimpleNamespace(name="unrelated"),
-        ]
-        portfolio, research, other = partition_mcp_tools(tools)
-        self.assertEqual({t.name for t in portfolio}, PORTFOLIO_TOOL_NAMES)
-        self.assertEqual({t.name for t in research}, RESEARCH_TOOL_NAMES)
-        self.assertEqual(other, ["unrelated"])
+class _FakeMcpClient:
+    def __init__(self, tools: list) -> None:
+        self._tools = tools
 
-    def test_empty_tools_stay_empty(self) -> None:
-        portfolio, research, other = partition_mcp_tools([])
-        self.assertEqual(portfolio, [])
-        self.assertEqual(research, [])
-        self.assertEqual(other, [])
+    async def get_tools(self) -> list:
+        return list(self._tools)
 
 
 class SupervisorDecisionTests(unittest.TestCase):
@@ -70,21 +51,13 @@ class GraphCompileTests(unittest.TestCase):
             return ""
 
         model = FakeListChatModel(responses=["ok"])
-        graph = compile_supervisor_graph(
-            model, [login, get_portfolio, searchLocalFolder, searchVectorDB]
+        client = _FakeMcpClient(
+            [login, get_portfolio, searchLocalFolder, searchVectorDB]
         )
+        graph = asyncio.run(compile_supervisor_graph(model, client))
         self.assertIn("supervisor", graph.nodes)
         self.assertIn("portfolio", graph.nodes)
         self.assertIn("research", graph.nodes)
-
-        portfolio, research, other = partition_mcp_tools(
-            [login, get_portfolio, searchLocalFolder, searchVectorDB]
-        )
-        self.assertEqual(len(portfolio), 2)
-        self.assertEqual(len(research), 2)
-        self.assertEqual(other, [])
-        self.assertNotIn("login", {t.name for t in research})
-        self.assertNotIn("searchVectorDB", {t.name for t in portfolio})
 
 
 if __name__ == "__main__":
