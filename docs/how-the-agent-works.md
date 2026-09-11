@@ -10,11 +10,28 @@ A LangGraph **supervisor** that routes to **portfolio** and **research** special
 |-------|--------|
 | Orchestration | **LangGraph** `StateGraph` (`START` → `supervisor` → `portfolio` / `research` → `supervisor` → `END`) |
 | Specialists | LangChain `create_agent` subgraphs in `agents/portfolio_sub_agent` and `agents/research_sub_agent` |
-| Tool loading | Shared **langchain-mcp-adapters** client; each sub-agent’s `mcp_tools` selects its allowlist |
+| Tool loading | Shared **langchain-mcp-adapters** client when `TOOL_MODE=mcp`; each sub-agent selects its allowlist. Other modes use `python_tools/` or `skills/` |
 | Model | **Gemini** (`gemini-3.1-flash-lite`, via API key) |
-| Tool sources | **apira-mcp** (`login`, `get_portfolio`) + **apira-rag** (`searchLocalFolder`, `searchVectorDB`) |
+| Tool sources | **apira-mcp** (`login`, `get_portfolio`) + **apira-rag** (`searchLocalFolder`, `searchVectorDB`). `searchVectorDB` is MCP-only; other modes use a local `searchLocalFolder`. |
 
 The agent is a client of both MCP servers, in its own repo separate from [apira](https://github.com/KMeltzer24/apira), [apira-mcp](https://github.com/KMeltzer24/apira-mcp), and [apira-rag](https://github.com/KMeltzer24/apira-rag).
+
+---
+
+## Tool modes (`TOOL_MODE`)
+
+Specialists load **one** packaging at a time. Portfolio tool names stay identical across modes. Research: `searchLocalFolder` exists in every mode; `searchVectorDB` only in `mcp`.
+
+| Mode | Portfolio / research packaging |
+|------|--------------------------------|
+| `mcp` (default) | MCP allowlists under each agent’s `mcp_tools/` |
+| `python` | LangChain `@tool` under `python_tools/` (portfolio → REST; `searchLocalFolder` → local files) |
+| `skills_prompt` | `skills/<tool>.md` (natural language only) appended to the system prompt; **no tools bound** |
+| `skills_shell` | `skills/<tool>_shell.md` with embedded bash fences (`searchLocalFolder` searches local files) |
+
+Skill files are named after the **tool**, not the agent (`login.md` / `login_shell.md`, not `research.md` / `research_shell.md`).
+
+**Full detail:** [tool-use-scenarios.md](tool-use-scenarios.md).
 
 ---
 
@@ -31,12 +48,12 @@ LangGraph StateGraph + Gemini
       └── research_chunks in Postgres (searchVectorDB / pgvector)
 ```
 
-1. Connect to both MCP servers with one shared client. Each sub-agent loads only its tools via `mcp_tools/` (`login` / `get_portfolio` for portfolio; `searchLocalFolder` / `searchVectorDB` for research). `python_tools/` and `skills/` are placeholders.
+1. Connect to both MCP servers with one shared client when `TOOL_MODE=mcp`. Each sub-agent loads only its tools via `mcp_tools/` (`login` / `get_portfolio` for portfolio; `searchLocalFolder` / `searchVectorDB` for research). For other modes, specialists load `python_tools/` or `skills/` instead (see **Tool modes** above).
 2. Compile a parent graph in `agents/graph.py`. The supervisor (`agents/supervisor/`) uses structured output (`portfolio` | `research` | `finish`). Specialists keep their own system prompts (login then holdings; one research tool unless asked for both; Hold/Add/Trim with citations).
 3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio"): supervisor → portfolio → supervisor → END.
 4. For recommendations: supervisor → portfolio → supervisor → research → supervisor → END.
 
-The agent never hardcodes the API shape — it discovers tools at runtime. Login, user-service, portfolio-service, and RAG stay tools/services, not graph agents.
+In `TOOL_MODE=mcp`, the agent does not hardcode the API shape — it discovers tools at runtime. Login, user-service, portfolio-service, and RAG stay tools/services, not graph agents.
 
 ---
 
@@ -51,7 +68,7 @@ pip install -r requirements.txt
 cp .env.example .env              # set GOOGLE_API_KEY (aistudio.google.com/apikey)
 ```
 
-Config lives in `.env`: `MCP_URL`, `RAG_MCP_URL` (both must end in `/mcp`), `LLM_MODEL`, and `GOOGLE_API_KEY`. Full stack: [apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md).
+Config lives in `.env`: `TOOL_MODE`, `MCP_URL`, `RAG_MCP_URL` (both must end in `/mcp`), `USER_SERVICE_URL`, `PORTFOLIO_SERVICE_URL`, `STOCK_RESEARCH_DIR`, `LLM_MODEL`, and `GOOGLE_API_KEY`. Full stack: [apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md).
 
 ---
 

@@ -7,6 +7,10 @@ services:
       # Backend and research MCP servers on the host (host.docker.internal).
       - MCP_URL=${MCP_URL:-http://host.docker.internal:8000/mcp}
       - RAG_MCP_URL=${RAG_MCP_URL:-http://host.docker.internal:8200/mcp}
+      - USER_SERVICE_URL=${USER_SERVICE_URL:-http://host.docker.internal:8001}
+      - PORTFOLIO_SERVICE_URL=${PORTFOLIO_SERVICE_URL:-http://host.docker.internal:8002}
+      - STOCK_RESEARCH_DIR=${STOCK_RESEARCH_DIR:-/data/stock-research}
+      - TOOL_MODE=${TOOL_MODE:-mcp}
       - LLM_MODEL=${LLM_MODEL:-gemini-3.1-flash-lite}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
@@ -14,6 +18,9 @@ services:
       - LOG_FORMAT=${LOG_FORMAT:-json}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - SERVICE_NAME=${SERVICE_NAME:-apira-agent}
+    volumes:
+      # Same corpus apira-rag uses; needed for python / skills_shell searchLocalFolder.
+      - ${STOCK_RESEARCH_HOST_PATH:-../apira-rag/stock-research}:/data/stock-research:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

@@ -11,6 +11,7 @@ from agents.research_sub_agent.agent import build_agent as build_research_agent
 from agents.state import GraphState
 from agents.supervisor.agent import build_node as build_supervisor_node
 from agents.supervisor.agent import reset_supervisor_hops
+from agents.tool_mode import TOOL_MODE_MCP, get_tool_mode
 
 __all__ = ["compile_supervisor_graph", "reset_supervisor_hops", "GraphState"]
 
@@ -18,10 +19,13 @@ __all__ = ["compile_supervisor_graph", "reset_supervisor_hops", "GraphState"]
 async def compile_supervisor_graph(model: Any, client: Any):
     """Build the parent StateGraph: supervisor + portfolio + research.
 
-    Sub-agents load their own MCP tool allowlists via the shared client.
-    Tool names are not referenced in this module.
+    Sub-agents load tools according to ``TOOL_MODE``. MCP tool names are not
+    referenced in this module.
     """
-    all_tools: Sequence[Any] = await client.get_tools()
+    mode = get_tool_mode()
+    all_tools: Sequence[Any] = (
+        await client.get_tools() if mode == TOOL_MODE_MCP else []
+    )
     portfolio_node = await build_portfolio_agent(model, client, tools=all_tools)
     research_node = await build_research_agent(model, client, tools=all_tools)
     supervisor_node = build_supervisor_node(model)

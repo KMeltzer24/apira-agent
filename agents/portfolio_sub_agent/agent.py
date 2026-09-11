@@ -9,9 +9,22 @@ from typing import Any, Sequence
 from langchain.agents import create_agent
 from langchain_core.runnables import RunnableConfig
 
-from agents.portfolio_sub_agent.mcp_tools import load_tools, select_tools
+from agents.portfolio_sub_agent.mcp_tools import load_tools as load_mcp_tools
+from agents.portfolio_sub_agent.mcp_tools import select_tools
 from agents.portfolio_sub_agent.prompt import PORTFOLIO_PROMPT
+from agents.portfolio_sub_agent.python_tools import load_tools as load_python_tools
+from agents.portfolio_sub_agent.skills import (
+    load_prompt_skill_text,
+    load_shell_tools,
+)
 from agents.state import GraphState
+from agents.tool_mode import (
+    TOOL_MODE_MCP,
+    TOOL_MODE_PYTHON,
+    TOOL_MODE_SKILLS_PROMPT,
+    TOOL_MODE_SKILLS_SHELL,
+    get_tool_mode,
+)
 from logging_config import log_event
 
 logger = logging.getLogger(__name__)
@@ -63,15 +76,33 @@ async def build_agent(
     *,
     tools: Sequence[Any] | None = None,
 ):
-    """Build a graph node for the portfolio specialist using this agent's MCP tools.
+    """Build a graph node for the portfolio specialist.
 
-    Pass ``tools`` when the shared client was already fetched once by the graph.
+    Pass ``tools`` when the shared MCP client was already fetched once by the graph
+    (used when ``TOOL_MODE=mcp``).
     """
-    selected = select_tools(tools) if tools is not None else await load_tools(client)
+    mode = get_tool_mode()
+    if mode == TOOL_MODE_MCP:
+        selected_tools = (
+            select_tools(tools) if tools is not None else await load_mcp_tools(client)
+        )
+        prompt = PORTFOLIO_PROMPT
+    elif mode == TOOL_MODE_PYTHON:
+        selected_tools = load_python_tools()
+        prompt = PORTFOLIO_PROMPT
+    elif mode == TOOL_MODE_SKILLS_PROMPT:
+        selected_tools = []
+        prompt = f"{PORTFOLIO_PROMPT}\n\n## Skills\n\n{load_prompt_skill_text()}"
+    elif mode == TOOL_MODE_SKILLS_SHELL:
+        selected_tools = load_shell_tools()
+        prompt = PORTFOLIO_PROMPT
+    else:
+        raise ValueError(f"Unsupported TOOL_MODE for portfolio: {mode}")
+
     subgraph = create_agent(
         model,
-        selected,
-        system_prompt=PORTFOLIO_PROMPT,
+        selected_tools,
+        system_prompt=prompt,
         name=AGENT_NAME,
     )
     return _wrap_specialist(subgraph)

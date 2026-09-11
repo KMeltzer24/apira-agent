@@ -6,6 +6,8 @@ Built with **LangChain**, **LangGraph**, and **langchain-mcp-adapters**. Run it 
 
 **Full write-up:** [docs/how-the-agent-works.md](docs/how-the-agent-works.md) — what we built, how it works, and how to test it.
 
+**Tool use scenarios:** [docs/tool-use-scenarios.md](docs/tool-use-scenarios.md) — `TOOL_MODE` (MCP, Python `@tool`, skills prompt, skills shell).
+
 **Stock Recommender:** [apira-rag/docs/how-stock-recommender-works.md](https://github.com/KMeltzer24/apira-rag/blob/main/docs/how-stock-recommender-works.md).
 
 **Logging contract:** [apira/docs/logging.md](https://github.com/KMeltzer24/apira/blob/main/docs/logging.md).
@@ -34,6 +36,15 @@ START → supervisor → portfolio | research → supervisor → END
 | **supervisor** | Chat agent: answer directly or route | none (`agents/supervisor/`) |
 | **portfolio** | Login and holdings | `login`, `get_portfolio` (`agents/portfolio_sub_agent/mcp_tools/`) |
 | **research** | Citations and Hold/Add/Trim | `searchLocalFolder`, `searchVectorDB` (`agents/research_sub_agent/mcp_tools/`) |
+
+Tool **names stay the same** across packaging modes. Set `TOOL_MODE` to switch how specialists load them:
+
+| `TOOL_MODE` | What specialists use |
+|-------------|----------------------|
+| `mcp` (default) | Remote MCP tools via allowlists under `mcp_tools/` |
+| `python` | In-process LangChain `@tool`s under `python_tools/` (portfolio → REST; `searchLocalFolder` → local files) |
+| `skills_prompt` | `skills/<tool>.md` injected into the system prompt (no bound tools) |
+| `skills_shell` | `skills/<tool>_shell.md` with embedded `bash` blocks (`searchLocalFolder` local; no `searchVectorDB`) |
 
 Agent Chat and Stock Recommender both `POST /chat`; the supervisor decides which specialist(s) to run. Login and the FastAPI services stay tools, not agents.
 
@@ -86,8 +97,12 @@ Four cases: supervisor chat, alice portfolio (share counts), local-folder recomm
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
+| `TOOL_MODE` | `mcp` | Tool packaging: `mcp`, `python`, `skills_prompt`, or `skills_shell` |
 | `MCP_URL` | `http://host.docker.internal:8000/mcp` | Apira MCP endpoint |
 | `RAG_MCP_URL` | `http://host.docker.internal:8200/mcp` | Apira RAG MCP endpoint |
+| `USER_SERVICE_URL` | `http://host.docker.internal:8001` | user-service REST (python / skills_shell) |
+| `PORTFOLIO_SERVICE_URL` | `http://host.docker.internal:8002` | portfolio-service REST (python / skills_shell) |
+| `STOCK_RESEARCH_DIR` | `/data/stock-research` | Local research corpus (python / skills_shell `searchLocalFolder`) |
 | `LLM_MODEL` | `gemini-3.1-flash-lite` | Gemini model |
 | `GOOGLE_API_KEY` | — | Gemini API key (required) |
 | `CORS_ORIGINS` | `*` | Browser origins allowed to call the API |
@@ -136,5 +151,5 @@ curl -X POST http://localhost:8100/chat -H "Content-Type: application/json" \
 ## Notes
 
 - `agent.py` runs a one-shot prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each chat request.
-- The agent never calls the backend APIs directly — it only uses MCP tools, so it stays decoupled from how the APIs are implemented.
+- The agent never calls the backend APIs directly **in `TOOL_MODE=mcp`** — it uses MCP tools. With `TOOL_MODE=python` or `skills_shell`, portfolio tools call user/portfolio REST and `searchLocalFolder` reads `STOCK_RESEARCH_DIR`. `searchVectorDB` is only available in `TOOL_MODE=mcp`.
 - No authentication on the MCP endpoint or the agent API (learning project). Keep `GOOGLE_API_KEY` in `.env` (gitignored), never in git.
