@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import time
 from contextvars import ContextVar
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import END
 from langgraph.types import Command
 from pydantic import BaseModel, Field
@@ -19,6 +19,15 @@ from logging_config import log_event
 logger = logging.getLogger(__name__)
 
 MAX_SUPERVISOR_HOPS = 6
+_RESEARCH_REQUEST_MARKERS = (
+    "searchlocalfolder",
+    "searchvectordb",
+    "recommend",
+    "hold / add / trim",
+    "hold/add/trim",
+    "hold, add, or trim",
+)
+_RESEARCH_TOOL_NAMES = frozenset({"searchLocalFolder", "searchVectorDB"})
 
 _supervisor_hops: ContextVar[int] = ContextVar("supervisor_hops", default=0)
 
@@ -59,6 +68,81 @@ def parse_supervisor_decision(raw: Any) -> SupervisorDecision:
     return SupervisorDecision(next=nxt, reply="")
 
 
+def _is_human_message(message: Any) -> bool:
+    if isinstance(message, HumanMessage) or getattr(message, "type", None) == "human":
+        return True
+    if isinstance(message, dict) and str(message.get("role", "")).lower() in {
+        "user",
+        "human",
+    }:
+        return True
+    return False
+
+
+def _message_text(message: Any) -> str:
+    if isinstance(message, dict):
+        content = message.get("content", "")
+    else:
+        content = getattr(message, "content", message)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+            else:
+                text = getattr(block, "text", None)
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(parts)
+    return str(content or "")
+
+
+def user_requested_research(messages: Sequence[Any]) -> bool:
+    """True when the original user ask needs research / recommendations."""
+    for message in messages:
+        if not _is_human_message(message):
+            continue
+        text = _message_text(message).casefold()
+        if any(marker in text for marker in _RESEARCH_REQUEST_MARKERS):
+            return True
+    return False
+
+
+def research_tools_already_used(messages: Sequence[Any]) -> bool:
+    """True when searchLocalFolder / searchVectorDB already appear in the thread."""
+    for message in messages:
+        name = getattr(message, "name", None)
+        if name in _RESEARCH_TOOL_NAMES:
+            return True
+        for tool_call in getattr(message, "tool_calls", None) or []:
+            tool_name = (
+                tool_call.get("name")
+                if isinstance(tool_call, dict)
+                else getattr(tool_call, "name", None)
+            )
+            if tool_name in _RESEARCH_TOOL_NAMES:
+                return True
+    return False
+
+
+def enforce_research_routing(
+    decision: SupervisorDecision,
+    messages: Sequence[Any],
+    *,
+    forced_finish: bool = False,
+) -> SupervisorDecision:
+    """If the user asked for research and it has not run, do not finish early."""
+    if forced_finish or decision.next != "finish":
+        return decision
+    if user_requested_research(messages) and not research_tools_already_used(messages):
+        return SupervisorDecision(next="research", reply="")
+    return decision
+
+
 def build_node(model: Any):
     """Return the async supervisor graph node (routing only)."""
     try:
@@ -91,6 +175,11 @@ def build_node(model: Any):
                 else:
                     raw = await model.ainvoke(route_messages)
                 decision = parse_supervisor_decision(raw)
+                decision = enforce_research_routing(
+                    decision,
+                    state["messages"],
+                    forced_finish=forced_finish,
+                )
         except Exception as exc:
             log_event(
                 logger,

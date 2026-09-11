@@ -11,13 +11,18 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.tools import tool
 
 from agents.graph import compile_supervisor_graph
-from agents.supervisor.agent import parse_supervisor_decision
+from agents.supervisor.agent import (
+    enforce_research_routing,
+    parse_supervisor_decision,
+    SupervisorDecision,
+)
 from agents.tool_mode import (
     TOOL_MODE_MCP,
     TOOL_MODE_PYTHON,
     TOOL_MODE_SKILLS_PROMPT,
     TOOL_MODE_SKILLS_SHELL,
 )
+from langchain_core.messages import AIMessage, HumanMessage
 
 
 class _FakeMcpClient:
@@ -61,6 +66,60 @@ class SupervisorDecisionTests(unittest.TestCase):
         self.assertEqual(parsed.reply, "hi")
         fallback = parse_supervisor_decision({"next": "tools"})
         self.assertEqual(fallback.next, "finish")
+
+    def test_enforce_research_after_portfolio_finish(self) -> None:
+        messages = [
+            HumanMessage(
+                content=(
+                    "Log in as alice. Use searchLocalFolder only. "
+                    "Respond with Hold / Add / Trim and Files: lines."
+                )
+            ),
+            AIMessage(content="Holdings: AAPL 150, MSFT 80"),
+        ]
+        forced = enforce_research_routing(
+            SupervisorDecision(next="finish", reply="done"),
+            messages,
+        )
+        self.assertEqual(forced.next, "research")
+        self.assertEqual(forced.reply, "")
+
+    def test_enforce_research_with_dict_user_message(self) -> None:
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "Log in as alice. Use searchLocalFolder only for research. "
+                    "Hold / Add / Trim with Files: lines."
+                ),
+            },
+            {"role": "assistant", "content": "Holdings listed."},
+        ]
+        forced = enforce_research_routing(
+            SupervisorDecision(next="finish", reply="done"),
+            messages,
+        )
+        self.assertEqual(forced.next, "research")
+
+    def test_enforce_allows_finish_after_research_tool(self) -> None:
+        messages = [
+            HumanMessage(content="Use searchLocalFolder for recommendations."),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "searchLocalFolder",
+                        "args": {"query": "AAPL"},
+                        "id": "1",
+                    }
+                ],
+            ),
+        ]
+        kept = enforce_research_routing(
+            SupervisorDecision(next="finish", reply=""),
+            messages,
+        )
+        self.assertEqual(kept.next, "finish")
 
 
 class GraphCompileTests(unittest.TestCase):
