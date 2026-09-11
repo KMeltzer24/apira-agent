@@ -1,11 +1,21 @@
 ---
 name: login
-description: Authenticate via curl against user-service.
+description: Authenticate via generated code; sample bash is a hint.
 ---
 
 # login
 
-Call this skill with `username` and `password`. It posts to the user-service login API and prints the JSON response (including `user_id`).
+Implement a real login against the user-service REST API.
+
+## Contract
+
+- **Args:** `username`, `password`.
+- **Endpoint:** `POST ${USER_SERVICE_URL}/login` with JSON
+  `{"username": "...", "password": "..."}`.
+- Optional header: `X-Request-ID` from env `X_REQUEST_ID` when set.
+- **Stdout:** print the raw JSON response (includes `user_id`).
+
+## Sample bash (hint — adapt or rewrite in your generated fence)
 
 ```bash
 curl_args=(-sS -X POST "${USER_SERVICE_URL}/login" -H "Content-Type: application/json")

@@ -14,7 +14,7 @@ from agents.portfolio_sub_agent.mcp_tools import select_tools
 from agents.portfolio_sub_agent.prompt import PORTFOLIO_PROMPT
 from agents.portfolio_sub_agent.python_tools import load_tools as load_python_tools
 from agents.portfolio_sub_agent.skills import (
-    load_prompt_skill_text,
+    load_prompt_tools,
     load_shell_tools,
 )
 from agents.state import GraphState
@@ -91,10 +91,10 @@ async def build_agent(
         selected_tools = load_python_tools()
         prompt = PORTFOLIO_PROMPT
     elif mode == TOOL_MODE_SKILLS_PROMPT:
-        selected_tools = []
-        prompt = f"{PORTFOLIO_PROMPT}\n\n## Skills\n\n{load_prompt_skill_text()}"
+        selected_tools = load_prompt_tools(model)
+        prompt = PORTFOLIO_PROMPT
     elif mode == TOOL_MODE_SKILLS_SHELL:
-        selected_tools = load_shell_tools()
+        selected_tools = load_shell_tools(model)
         prompt = PORTFOLIO_PROMPT
     else:
         raise ValueError(f"Unsupported TOOL_MODE for portfolio: {mode}")

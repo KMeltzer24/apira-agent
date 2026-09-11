@@ -17,7 +17,7 @@ from agents.research_sub_agent.prompt import (
 )
 from agents.research_sub_agent.python_tools import load_tools as load_python_tools
 from agents.research_sub_agent.skills import (
-    load_prompt_skill_text,
+    load_prompt_tools,
     load_shell_tools,
 )
 from agents.state import GraphState
@@ -94,12 +94,10 @@ async def build_agent(
         selected_tools = load_python_tools()
         prompt = RESEARCH_PROMPT_LOCAL_FOLDER
     elif mode == TOOL_MODE_SKILLS_PROMPT:
-        selected_tools = []
-        prompt = (
-            f"{RESEARCH_PROMPT_LOCAL_FOLDER}\n\n## Skills\n\n{load_prompt_skill_text()}"
-        )
+        selected_tools = load_prompt_tools(model)
+        prompt = RESEARCH_PROMPT_LOCAL_FOLDER
     elif mode == TOOL_MODE_SKILLS_SHELL:
-        selected_tools = load_shell_tools()
+        selected_tools = load_shell_tools(model)
         prompt = RESEARCH_PROMPT_LOCAL_FOLDER
     else:
         raise ValueError(f"Unsupported TOOL_MODE for research: {mode}")

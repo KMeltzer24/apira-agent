@@ -14,8 +14,8 @@ We wanted to compare common agent tool patterns side by side:
 |------|------|
 | `mcp` | Tools discovered and called over MCP |
 | `python` | In-process LangChain `@tool` functions |
-| `skills_prompt` | Markdown skills as system-prompt guidance only (no executable tools) |
-| `skills_shell` | Markdown skills with embedded `bash` that run when the tool is called |
+| `skills_prompt` | NL skill markdown → Gemini generates python/bash → run stdout |
+| `skills_shell` | Same codegen path; `*_shell.md` sample bash is a **hint** only |
 
 Tool **names** stay stable where a tool exists (`login`, `get_portfolio`, `searchLocalFolder`). Packaging changes; the LLM still calls familiar names.
 
@@ -54,28 +54,30 @@ LangChain `@tool` under each agent’s `python_tools/`:
 | Tool | What runs |
 |------|-----------|
 | `login` / `get_portfolio` | `httpx` to `USER_SERVICE_URL` / `PORTFOLIO_SERVICE_URL` (same REST as behind apira-mcp) |
-| `searchLocalFolder` | Local folder walk in [`local_folder_search.py`](../agents/research_sub_agent/local_folder_search.py) over `STOCK_RESEARCH_DIR` |
+| `searchLocalFolder` | Local folder walk in [`python_tools/local_folder_search.py`](../agents/research_sub_agent/python_tools/local_folder_search.py) over `STOCK_RESEARCH_DIR` |
 | `searchVectorDB` | **Not registered** (MCP-only; see below) |
 
 ### 3. `skills_prompt`
 
-- Flat files: `skills/<tool>.md` (e.g. `login.md`, `searchLocalFolder.md`).
-- Bodies are concatenated into the specialist system prompt under `## Skills`.
-- **No tools bound** — instruction-only demo. The model cannot call login, portfolio, or search.
+- Flat files: `skills/<tool>.md` (e.g. `login.md`, `searchLocalFolder.md`) describe the contract in natural language (endpoints, args, stdout).
+- Specialists bind real tools with the same names. On each tool call the runtime:
+  1. Loads the skill markdown
+  2. Asks Gemini to emit **one** fenced `python` / `bash` / `sh` program
+  3. Runs that program and returns **stdout** as the tool result
 
-Loader: [`agents/skills_runtime.py`](../agents/skills_runtime.py) → `load_prompt_skills`.
+Loader: [`agents/skills_runtime.py`](../agents/skills_runtime.py) → `make_codegen_skill_tool` (`kind="prompt"`).
 
 ### 4. `skills_shell`
 
-- Flat files: `skills/<tool>_shell.md` with fenced `bash` / `sh` blocks.
-- LangChain tools with the **same names** load that file, extract bash, run via subprocess, pass tool args as env vars, return stdout.
+- Flat files: `skills/<tool>_shell.md` with the same contract **plus** optional sample `bash` fences.
+- Same codegen path as `skills_prompt`: Gemini still generates the code that runs. Sample bash is **context/hint** (adapt or rewrite), not auto-executed as the whole tool.
 
-Examples:
+Examples of sample hints:
 
-- Portfolio: `curl` to user/portfolio services (`login_shell.md`, `get_portfolio_shell.md`)
-- Research: `python -m agents.research_sub_agent.local_folder_search` (`searchLocalFolder_shell.md`)
+- Portfolio: `curl` sketches (`login_shell.md`, `get_portfolio_shell.md`)
+- Research: inline filesystem search sample (`searchLocalFolder_shell.md`) — not `python_tools` / `local_folder_search`
 
-The agent Docker image installs **`curl`** (see `Dockerfile`) so portfolio shell skills work. There is **no** `searchVectorDB_shell.md`.
+The agent Docker image installs **`curl`** so generated/sample bash can use it. There is **no** `searchVectorDB_shell.md`.
 
 ---
 
@@ -92,8 +94,8 @@ Vector search (embeddings, pgvector, ranking) lives in **apira-rag**. Duplicatin
 |------|---------------------|------------------|
 | `mcp` | RAG MCP | RAG MCP |
 | `python` | Local files | Not available |
-| `skills_shell` | Local files (bash → local CLI) | Not available |
-| `skills_prompt` | Prompt text only | Not available |
+| `skills_shell` | Codegen → local search | Not available |
+| `skills_prompt` | Codegen → local search | Not available |
 
 If the user asks for vector search while `TOOL_MODE` is not `mcp`, the model has no `searchVectorDB` tool. It may use `searchLocalFolder`, answer without tools, or say it cannot run vector search. To use vector search for real, set `TOOL_MODE=mcp` and restart.
 
@@ -106,7 +108,7 @@ The apira-rag pipeline itself was **not** changed.
 ```
 agents/
   tool_mode.py              # TOOL_MODE validation
-  skills_runtime.py         # load prompt skills; run shell skill bash
+  skills_runtime.py         # load skills; Gemini codegen + execute fences
   portfolio_sub_agent/
     mcp_tools/              # allowlist login, get_portfolio
     python_tools/           # @tool → REST
@@ -118,7 +120,7 @@ agents/
   research_sub_agent/
     mcp_tools/              # allowlist searchLocalFolder, searchVectorDB
     python_tools/           # @tool searchLocalFolder only
-    local_folder_search.py  # shared local search + CLI
+      local_folder_search.py  # folder walk used by python @tool
     skills/
       searchLocalFolder.md
       searchLocalFolder_shell.md
@@ -134,8 +136,8 @@ Skill files are named after the **tool** (`login` / `login_shell`), not the agen
 |----------|---------|---------|
 | `TOOL_MODE` | All | `mcp` \| `python` \| `skills_prompt` \| `skills_shell` |
 | `MCP_URL` / `RAG_MCP_URL` | `mcp` | MCP servers |
-| `USER_SERVICE_URL` / `PORTFOLIO_SERVICE_URL` | `python`, `skills_shell` | Portfolio REST |
-| `STOCK_RESEARCH_DIR` | `python`, `skills_shell` | Local research corpus for `searchLocalFolder` |
+| `USER_SERVICE_URL` / `PORTFOLIO_SERVICE_URL` | `python`, `skills_prompt`, `skills_shell` | Portfolio REST (python tools; also env for skill-generated code) |
+| `STOCK_RESEARCH_DIR` | `python`, `skills_prompt`, `skills_shell` | Local research corpus for `searchLocalFolder` |
 
 Docker mounts `../apira-rag/stock-research` → `/data/stock-research` (override host path with `STOCK_RESEARCH_HOST_PATH`). See `.env.example` and `docker-compose.yml`.
 
@@ -146,7 +148,7 @@ Docker mounts `../apira-rag/stock-research` → `/data/stock-research` (override
 | Module | Role |
 |--------|------|
 | `agents/tool_mode.py` | Read/validate `TOOL_MODE` |
-| `agents/skills_runtime.py` | Prompt skill injection; bash extraction/execution; build shell skill tools |
+| `agents/skills_runtime.py` | Skill markdown load; codegen fence extract/run; build skill tools |
 
 ---
 
@@ -154,7 +156,7 @@ Docker mounts `../apira-rag/stock-research` → `/data/stock-research` (override
 
 - `tests/test_tool_mode.py` — mode parsing
 - `tests/test_python_tools.py` — portfolio tools; research python is local-folder only
-- `tests/test_skills_runtime.py` — bash extraction; skill loading
+- `tests/test_skills_runtime.py` — codegen fence extract/run; skill tool names
 - `tests/test_local_folder_search.py` — local folder search / CLI
 - `tests/test_graph.py` — graph compile; non-MCP modes skip `client.get_tools()`; recommender routing enforcement (including dict-style user messages)
 
@@ -173,10 +175,10 @@ TOOL_MODE=mcp docker compose up -d --build
 # Python packaging (portfolio REST + local folder search)
 TOOL_MODE=python docker compose up -d --force-recreate
 
-# Shell skills (needs curl in the image)
+# Shell skills (codegen; sample bash is a hint)
 TOOL_MODE=skills_shell docker compose up -d --force-recreate
 
-# Prompt-only skills (no real tool calls — expect capability-style answers)
+# NL skills (codegen on each tool call — same outcomes as shell/python for local folder)
 TOOL_MODE=skills_prompt docker compose up -d --force-recreate
 
 # Vector recommender still needs MCP mode

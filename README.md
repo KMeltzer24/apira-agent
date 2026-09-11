@@ -43,8 +43,8 @@ Tool **names stay the same** across packaging modes. Set `TOOL_MODE` to switch h
 |-------------|----------------------|
 | `mcp` (default) | Remote MCP tools via allowlists under `mcp_tools/` |
 | `python` | In-process LangChain `@tool`s under `python_tools/` (portfolio → REST; `searchLocalFolder` → local files) |
-| `skills_prompt` | `skills/<tool>.md` injected into the system prompt (no bound tools) |
-| `skills_shell` | `skills/<tool>_shell.md` with embedded `bash` blocks (`searchLocalFolder` local; no `searchVectorDB`) |
+| `skills_prompt` | NL `skills/<tool>.md` → Gemini generates python/bash → execute (real tools) |
+| `skills_shell` | `skills/<tool>_shell.md` same codegen path; sample bash is a hint (`searchLocalFolder` local; no `searchVectorDB`) |
 
 Agent Chat and Stock Recommender both `POST /chat`; the supervisor decides which specialist(s) to run. Login and the FastAPI services stay tools, not agents.
 
@@ -151,5 +151,5 @@ curl -X POST http://localhost:8100/chat -H "Content-Type: application/json" \
 ## Notes
 
 - `agent.py` runs a one-shot prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each chat request.
-- The agent never calls the backend APIs directly **in `TOOL_MODE=mcp`** — it uses MCP tools. With `TOOL_MODE=python` or `skills_shell`, portfolio tools call user/portfolio REST and `searchLocalFolder` reads `STOCK_RESEARCH_DIR`. `searchVectorDB` is only available in `TOOL_MODE=mcp`.
+- The agent never calls the backend APIs directly **in `TOOL_MODE=mcp`** — it uses MCP tools. With `TOOL_MODE=python`, portfolio `@tool`s call user/portfolio REST and `searchLocalFolder` uses `python_tools/local_folder_search.py`. With `skills_prompt` / `skills_shell`, the same tool names run via Gemini codegen from skill markdown. `searchVectorDB` is only available in `TOOL_MODE=mcp`.
 - No authentication on the MCP endpoint or the agent API (learning project). Keep `GOOGLE_API_KEY` in `.env` (gitignored), never in git.

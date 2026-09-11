@@ -26,8 +26,8 @@ Specialists load **one** packaging at a time. Portfolio tool names stay identica
 |------|--------------------------------|
 | `mcp` (default) | MCP allowlists under each agent’s `mcp_tools/` |
 | `python` | LangChain `@tool` under `python_tools/` (portfolio → REST; `searchLocalFolder` → local files) |
-| `skills_prompt` | `skills/<tool>.md` (natural language only) appended to the system prompt; **no tools bound** |
-| `skills_shell` | `skills/<tool>_shell.md` with embedded bash fences (`searchLocalFolder` searches local files) |
+| `skills_prompt` | `skills/<tool>.md` → Gemini generates python/bash → run (real tools) |
+| `skills_shell` | `skills/<tool>_shell.md` same codegen path; sample bash is a hint |
 
 Skill files are named after the **tool**, not the agent (`login.md` / `login_shell.md`, not `research.md` / `research_shell.md`).
 
@@ -182,5 +182,5 @@ promptfoo view
 ## Notes
 
 - Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-google-genai 4.2.5, fastapi 0.138.0.
-- Parent graph wiring lives in `agents/graph.py`; specialists and supervisor are separate packages under `agents/`. MCP client and `POST /chat` stay in `agent.py` / `server.py`.
+- Parent graph wiring lives in `agents/graph.py`; specialists and supervisor are separate packages under `agents/`. Root `agent.py` builds the Gemini/MCP client and imports that graph; `server.py` exposes `POST /chat`.
 - `agent.py` uses a default prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each request.

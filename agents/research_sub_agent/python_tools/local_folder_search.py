@@ -1,4 +1,4 @@
-"""Local stock-research folder search (non-MCP path for searchLocalFolder)."""
+"""Local stock-research folder search for TOOL_MODE=python searchLocalFolder."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ def search_local_folder(query: str = "", *, root: str | Path | None = None) -> d
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI: ``python -m agents.research_sub_agent.local_folder_search [query]``."""
+    """CLI: ``python -m agents.research_sub_agent.python_tools.local_folder_search``."""
     args = list(sys.argv[1:] if argv is None else argv)
     query = args[0] if args else ""
     try:

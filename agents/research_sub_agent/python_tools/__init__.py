@@ -7,8 +7,9 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from agents.research_sub_agent.local_folder_search import search_local_folder
-
+from agents.research_sub_agent.python_tools.local_folder_search import (
+    search_local_folder,
+)
 
 @tool
 async def searchLocalFolder(query: str = "") -> str:

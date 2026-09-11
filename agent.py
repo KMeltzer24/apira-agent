@@ -23,7 +23,7 @@ from langchain_mcp_adapters.interceptors import (
     MCPToolCallResult,
 )
 
-from graph import compile_supervisor_graph, reset_supervisor_hops
+from agents.graph import compile_supervisor_graph, reset_supervisor_hops
 from logging_config import (
     REQUEST_ID_HEADER,
     configure_logging,

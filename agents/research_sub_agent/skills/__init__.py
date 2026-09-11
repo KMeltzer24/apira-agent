@@ -9,18 +9,12 @@ from typing import Any
 
 from pydantic import Field
 
-from agents.skills_runtime import load_prompt_skills, make_shell_skill_tool
+from agents.skills_runtime import make_codegen_skill_tool
 
 SKILLS_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # searchVectorDB stays MCP-only; skills cover local folder search.
-_TOOL_ORDER = ("searchLocalFolder",)
-
-
-def load_prompt_skill_text() -> str:
-    """NL-only skills for system-prompt injection."""
-    return load_prompt_skills(SKILLS_DIR, _TOOL_ORDER)
 
 
 def _local_search_env() -> dict[str, str]:
@@ -33,16 +27,29 @@ def _local_search_env() -> dict[str, str]:
     }
 
 
-def load_shell_tools() -> list[Any]:
-    """Tools that execute embedded bash from ``*_shell.md``."""
+def _build_tools(model: Any, *, kind: str) -> list[Any]:
     return [
-        make_shell_skill_tool(
+        make_codegen_skill_tool(
+            model=model,
             tool_name="searchLocalFolder",
             skills_dir=SKILLS_DIR,
-            description="Search text and Markdown stock research in the stock-research folder.",
+            description=(
+                "Search text and Markdown stock research in the stock-research folder."
+            ),
             arg_fields={
                 "query": (str, Field("", description="Search query")),
             },
+            kind=kind,  # type: ignore[arg-type]
             extra_env=_local_search_env,
         )
     ]
+
+
+def load_prompt_tools(model: Any) -> list[Any]:
+    """Codegen tools driven by NL ``searchLocalFolder.md``."""
+    return _build_tools(model, kind="prompt")
+
+
+def load_shell_tools(model: Any) -> list[Any]:
+    """Codegen tools driven by ``searchLocalFolder_shell.md`` (sample as hint)."""
+    return _build_tools(model, kind="shell")

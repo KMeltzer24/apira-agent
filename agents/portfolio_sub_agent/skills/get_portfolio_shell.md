@@ -1,11 +1,20 @@
 ---
 name: get_portfolio
-description: Fetch holdings via curl against portfolio-service.
+description: Fetch holdings via generated code; sample bash is a hint.
 ---
 
 # get_portfolio
 
-Call this skill with `user_id` from a prior login. It GETs the portfolio-service holdings endpoint and prints the JSON response.
+Fetch holdings from the portfolio-service REST API.
+
+## Contract
+
+- **Args:** `user_id` from a prior login.
+- **Endpoint:** `GET ${PORTFOLIO_SERVICE_URL}/portfolio?user_id=<user_id>`.
+- Optional header: `X-Request-ID` from env `X_REQUEST_ID` when set.
+- **Stdout:** print the raw JSON response.
+
+## Sample bash (hint — adapt or rewrite in your generated fence)
 
 ```bash
 curl_args=(-sS -G "${PORTFOLIO_SERVICE_URL}/portfolio")
