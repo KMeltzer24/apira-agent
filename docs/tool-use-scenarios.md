@@ -23,14 +23,16 @@ Tool **names** stay stable where a tool exists (`login`, `get_portfolio`, `searc
 
 ## How to switch
 
-Set in `.env` or docker-compose, then restart the agent:
+Set in `.env` or pass into compose, then recreate the agent:
 
 ```bash
-TOOL_MODE=mcp            # default
-TOOL_MODE=python
-TOOL_MODE=skills_prompt
-TOOL_MODE=skills_shell
+TOOL_MODE=mcp docker compose up -d --force-recreate
+TOOL_MODE=python docker compose up -d --force-recreate
+TOOL_MODE=skills_prompt docker compose up -d --force-recreate
+TOOL_MODE=skills_shell docker compose up -d --force-recreate
 ```
+
+**Docker caveat:** Compose prefers a variable already set in your **shell** over `.env`. If you previously exported `TOOL_MODE`, `USER_SERVICE_URL=http://localhost:…`, or a host `STOCK_RESEARCH_DIR`, those values win inside the container and break non-MCP modes. Prefer prefixing the compose command, or `unset` the overrides. Inside Docker, REST/MCP URLs should use `host.docker.internal`, and `STOCK_RESEARCH_DIR` should be `/data/stock-research`.
 
 Validated in [`agents/tool_mode.py`](../agents/tool_mode.py). Specialists read it in `portfolio_sub_agent/agent.py` and `research_sub_agent/agent.py`. The parent graph only fetches MCP tools when mode is `mcp`.
 
@@ -73,7 +75,7 @@ Examples:
 - Portfolio: `curl` to user/portfolio services (`login_shell.md`, `get_portfolio_shell.md`)
 - Research: `python -m agents.research_sub_agent.local_folder_search` (`searchLocalFolder_shell.md`)
 
-There is **no** `searchVectorDB_shell.md`.
+The agent Docker image installs **`curl`** (see `Dockerfile`) so portfolio shell skills work. There is **no** `searchVectorDB_shell.md`.
 
 ---
 
@@ -154,7 +156,7 @@ Docker mounts `../apira-rag/stock-research` → `/data/stock-research` (override
 - `tests/test_python_tools.py` — portfolio tools; research python is local-folder only
 - `tests/test_skills_runtime.py` — bash extraction; skill loading
 - `tests/test_local_folder_search.py` — local folder search / CLI
-- `tests/test_graph.py` — graph compile; non-MCP modes skip `client.get_tools()`
+- `tests/test_graph.py` — graph compile; non-MCP modes skip `client.get_tools()`; recommender routing enforcement (including dict-style user messages)
 
 ```bash
 python -m unittest discover -s tests
@@ -165,12 +167,18 @@ python -m unittest discover -s tests
 ## Quick verify
 
 ```bash
-# MCP (default)
+# MCP (default) — Local folder and Vector DB recommenders in the UI
 TOOL_MODE=mcp docker compose up -d --build
 
 # Python packaging (portfolio REST + local folder search)
-TOOL_MODE=python docker compose up -d --build
+TOOL_MODE=python docker compose up -d --force-recreate
+
+# Shell skills (needs curl in the image)
+TOOL_MODE=skills_shell docker compose up -d --force-recreate
+
+# Prompt-only skills (no real tool calls — expect capability-style answers)
+TOOL_MODE=skills_prompt docker compose up -d --force-recreate
 
 # Vector recommender still needs MCP mode
-TOOL_MODE=mcp  # then prompt that asks for searchVectorDB
+TOOL_MODE=mcp docker compose up -d --force-recreate
 ```

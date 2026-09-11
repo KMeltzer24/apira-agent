@@ -49,9 +49,9 @@ LangGraph StateGraph + Gemini
 ```
 
 1. Connect to both MCP servers with one shared client when `TOOL_MODE=mcp`. Each sub-agent loads only its tools via `mcp_tools/` (`login` / `get_portfolio` for portfolio; `searchLocalFolder` / `searchVectorDB` for research). For other modes, specialists load `python_tools/` or `skills/` instead (see **Tool modes** above).
-2. Compile a parent graph in `agents/graph.py`. The supervisor (`agents/supervisor/`) uses structured output (`portfolio` | `research` | `finish`). Specialists keep their own system prompts (login then holdings; one research tool unless asked for both; Hold/Add/Trim with citations).
+2. Compile a parent graph in `agents/graph.py`. The supervisor (`agents/supervisor/`) uses structured output (`portfolio` | `research` | `finish`). Specialists keep their own system prompts (portfolio: holdings only; research: call the chosen search tool and cite real filenames — never invent `Files: N/A`).
 3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio"): supervisor → portfolio → supervisor → END.
-4. For recommendations: supervisor → portfolio → supervisor → research → supervisor → END.
+4. For recommendations: supervisor → portfolio → supervisor → research → supervisor → END. Chat starts as `{"role": "user", ...}`; if the LLM tries to `finish` after holdings while the user still asked for search/Hold-Add-Trim and no research tool has run, `enforce_research_routing` forces `research` next.
 
 In `TOOL_MODE=mcp`, the agent does not hardcode the API shape — it discovers tools at runtime. Login, user-service, portfolio-service, and RAG stay tools/services, not graph agents.
 
@@ -138,8 +138,12 @@ For the Recommender path, see [apira-rag/docs/how-stock-recommender-works.md](ht
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| `httpx.ConnectError: All connection attempts failed` | An MCP URL is unavailable | Check `MCP_URL`, `RAG_MCP_URL`, and both servers |
+| `httpx.ConnectError: All connection attempts failed` | An MCP URL is unavailable, or (non-MCP) REST URLs point at `localhost` inside Docker | Check `MCP_URL` / `RAG_MCP_URL`, or use `host.docker.internal` for `USER_SERVICE_URL` / `PORTFOLIO_SERVICE_URL` |
+| `Stock research folder not found` | Host path leaked into the container as `STOCK_RESEARCH_DIR` | Set `STOCK_RESEARCH_DIR=/data/stock-research` for Docker |
+| `skill bash exited 127: curl: command not found` | Old image without curl | Rebuild agent image (`docker compose up -d --build`); Dockerfile installs curl for `skills_shell` |
+| Recommender answers Hold with `Files: N/A` / “no research access” | Supervisor finished after portfolio without research | Ensure current agent build (routing enforcement); logs should show `routed to research` then `searchLocalFolder` / `searchVectorDB` |
 | `DefaultCredentialsError` / 401 / 403 from Gemini | Missing or invalid `GOOGLE_API_KEY` | Set a valid key from aistudio.google.com/apikey |
+| Gemini `503` high demand / quota exhausted | Temporary capacity or project quota | Retry later, switch `LLM_MODEL`, or raise quota / use a new key |
 | `zsh: bad pattern: #` | Inline `#` comment after a command | Run the command alone, no trailing comment |
 | Timeout reaching the server | Agent/MCP not running | Start local stack; `curl http://localhost:8100/health` |
 
