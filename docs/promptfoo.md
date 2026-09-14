@@ -12,6 +12,8 @@ Promptfoo lives in **apira-agent** next to the LangGraph code. It evaluates the 
 
 It does not treat supervisor, portfolio, and research as three separate Promptfoo providers. One HTTP call runs the full graph; assertions run on the final `reply`.
 
+To test a specialist **without** the supervisor (stubbed Gemini and MCP), use `agents/portfolio_sub_agent/test_agent.py` and `agents/research_sub_agent/test_agent.py` — see [how-the-agent-works.md](how-the-agent-works.md#specialists-on-their-own-no-supervisor).
+
 ---
 
 ## Why these four tests

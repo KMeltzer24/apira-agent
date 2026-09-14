@@ -73,6 +73,18 @@ The graph loads tools from a shared MCP client; each sub-agent keeps its own all
 | `GET /health` | Liveness check |
 | `POST /chat` | `{ "message": "..." }` → `{ "reply": "..." }` |
 
+## Unit tests
+
+Specialists can be tested **without** the supervisor, Gemini, or live MCP. Each package has `test_agent.py` that calls `build_agent` directly and stubs the LLM plus MCP client. `TOOL_MODE` is switched through `python`, `mcp`, and both skill modes.
+
+```bash
+python -m unittest agents.portfolio_sub_agent.test_agent
+python -m unittest agents.research_sub_agent.test_agent
+python -m unittest discover -s tests   # graph wiring, routing, tools
+```
+
+Supervisor routing stays in `tests/test_graph.py`. Live Gemini + MCP still go through Promptfoo / `POST /chat`.
+
 ## Promptfoo
 
 Eval the **full** LangGraph run (final `reply` only — not each specialist separately) via [promptfooconfig.yaml](promptfooconfig.yaml).

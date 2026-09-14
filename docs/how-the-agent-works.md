@@ -96,7 +96,19 @@ frontend action end to end. See the canonical
 
 ## How to test
 
-There are two entry points: a hardcoded one-shot prompt, and the custom-prompt API.
+### Specialists on their own (no supervisor)
+
+Portfolio and research each have a `test_agent.py` next to the agent code. These call `build_agent` directly — they do not compile the parent graph. Gemini and MCP are stubbed (fake chat model + fake tool client) so the tests stay local and fast. They still switch `TOOL_MODE` (`python`, `mcp`, `skills_prompt`, `skills_shell`) to check that each specialist loads tools and returns messages.
+
+```bash
+python -m unittest agents.portfolio_sub_agent.test_agent
+python -m unittest agents.research_sub_agent.test_agent
+python -m unittest discover -s tests
+```
+
+Supervisor parse/routing and graph compile live in `tests/test_graph.py`. These unit tests do **not** replace Promptfoo: they do not score real replies or hit live login/search.
+
+There are two live entry points: a hardcoded one-shot prompt, and the custom-prompt API.
 
 ### Hardcoded prompt (the assignment demo)
 
