@@ -1,4 +1,4 @@
-"""Supervisor — chat and routing only. No MCP tools."""
+"""Supervisor — chat and routing. Logged-in hop may read last recommendation."""
 
 from agents.supervisor.agent import (
     build_node,

@@ -24,8 +24,8 @@ The suite maps to the main paths of the multi-agent system:
 |---|------|----------------------|----------------|
 | 1 | Supervisor chat | Supervisor finishes **without** tools | Chat can complete with no MCP calls |
 | 2 | Alice portfolio | Supervisor → **portfolio** → logged_in (`login`, `get_portfolio`) | Tools + seed data (share counts; not bob’s tickers) |
-| 3 | Local-folder recommender | Supervisor → portfolio → logged_in → **research** (`searchLocalFolder`) | Disk research files + Hold/Add/Trim |
-| 4 | Vector-DB recommender | Supervisor → portfolio → logged_in → **research** (`searchVectorDB`) | pgvector ingest + semantic search |
+| 3 | Local-folder recommender | Supervisor → portfolio → logged_in → **research** (`searchLocalFolder`) → save_recommendation | Disk research files + Hold/Add/Trim |
+| 4 | Vector-DB recommender | Supervisor → portfolio → logged_in → **research** (`searchVectorDB`) → save_recommendation | pgvector ingest + semantic search |
 
 Each test covers one major supervisor route rather than an arbitrary prompt.
 
@@ -62,7 +62,7 @@ HTTP POST http://localhost:8100/chat
   body: { "message": "<test prompt>" }
   ▼
 apira-agent (LangGraph)
-  supervisor → portfolio → logged_in → research → final reply
+  supervisor → portfolio → logged_in → research → save_recommendation → logged_in → final reply
   ▼
 Promptfoo reads json.reply
   ▼

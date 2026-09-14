@@ -8,11 +8,11 @@ A LangGraph **supervisor** that routes **sequentially** through **portfolio**, t
 
 | Piece | Choice |
 |-------|--------|
-| Orchestration | **LangGraph** `StateGraph` (`START` → `supervisor` → `portfolio` → `logged_in` → `research` → `logged_in` → `END`) |
+| Orchestration | **LangGraph** `StateGraph` (`START` → `supervisor` → `portfolio` → `logged_in` → `research` → `save_recommendation` → `logged_in` → `END`) |
 | Specialists | LangChain `create_agent` subgraphs in `agents/portfolio_sub_agent` and `agents/research_sub_agent` |
 | Tool loading | Shared **langchain-mcp-adapters** client when `TOOL_MODE=mcp`; each sub-agent selects its allowlist. Other modes use `python_tools/` or `skills/` |
 | Model | **Gemini** (`gemini-3.1-flash-lite`, via API key) |
-| Tool sources | **apira-mcp** (`login`, `get_portfolio`) + **apira-rag** (`searchLocalFolder`, `searchVectorDB`). `searchVectorDB` is on RAG MCP (`TOOL_MODE=mcp` or skills + `SKILLS_MCP=true`); other modes use a local `searchLocalFolder`. |
+| Tool sources | **apira-mcp** (`login`, `get_portfolio`, `getPreviousRecommendation`, `saveRecommendation`) + **apira-rag** (`searchLocalFolder`, `searchVectorDB`). Last recommendation lives in Apira Postgres (`recommendations`). `searchVectorDB` is on RAG MCP (`TOOL_MODE=mcp` or skills + `SKILLS_MCP=true`); other modes use a local `searchLocalFolder`. |
 
 The agent is a client of both MCP servers, in its own repo separate from [apira](https://github.com/KMeltzer24/apira), [apira-mcp](https://github.com/KMeltzer24/apira-mcp), and [apira-rag](https://github.com/KMeltzer24/apira-rag).
 
@@ -43,16 +43,17 @@ agent.py / server.py (prompt)
 LangGraph StateGraph + Gemini (sequential specialists; POST /chat is HTTP only)
   ├── supervisor — chat, or route to portfolio only (no tools)
   ├── portfolio → apira-mcp (:8000/mcp) → backend APIs (:8001 / :8002) → Postgres
-  ├── logged_in — post-portfolio supervisor; research is allowed here
+  ├── logged_in — post-portfolio: `getPreviousRecommendation` tool, or route to research
+  ├── save_recommendation — supervisor upsert after research (not an LLM tool)
   └── research → apira-rag (:8200/mcp)
       ├── stock-research/ files (searchLocalFolder)
       └── research_chunks in Postgres (searchVectorDB / pgvector)
 ```
 
 1. Connect to both MCP servers with one shared client when `TOOL_MODE=mcp`. Each sub-agent loads only its tools via `mcp_tools/` (`login` / `get_portfolio` for portfolio; `searchLocalFolder` / `searchVectorDB` for research). For other modes, specialists load `python_tools/` or `skills/` instead (see **Tool modes** above).
-2. Compile a parent graph in `agents/graph.py`. The first supervisor’s structured output is `portfolio` | `finish` (research is not a legal destination). After portfolio, `logged_in` is set on graph state and the logged-in supervisor may choose `research` | `finish`. Specialists keep their own system prompts (portfolio: holdings only; research: call the chosen search tool and cite real filenames — never invent `Files: N/A`).
+2. Compile a parent graph in `agents/graph.py`. The first supervisor’s structured output is `portfolio` | `finish` (no tools). After portfolio, the logged-in supervisor binds `getPreviousRecommendation` and may choose `research` | `finish` | `portfolio`. Last rec is that tool, not a graph destination.
 3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio"): supervisor → portfolio → logged_in → END.
-4. For recommendations: supervisor → portfolio → logged_in → research → logged_in → END. The first hop cannot skip to research; `enforce_guest_routing` sends research asks to portfolio first. After holdings, if the user still asked for search/Hold-Add-Trim and no research tool has run, `enforce_research_routing` forces `research` next. `POST /chat` always enters this graph; it does not call MCP tools itself.
+4. For recommendations: supervisor → portfolio → logged_in → research → save_recommendation → logged_in → END. The save hop upserts `recommendations`; research only searches. Asking for the last rec later: logged_in calls `getPreviousRecommendation`. The first hop cannot skip to research; `enforce_guest_routing` sends research/last-rec asks to portfolio first. After holdings, if the user still asked for search/Hold-Add-Trim and no research tool has run, `enforce_research_routing` forces `research` next. `POST /chat` always enters this graph; it does not call MCP tools itself.
 
 In `TOOL_MODE=mcp`, the agent does not hardcode the API shape — it discovers tools at runtime. Login, user-service, portfolio-service, and RAG stay tools/services, not graph agents.
 
@@ -80,7 +81,7 @@ the response, and keeps it active throughout the agent run. `agent.py`
 propagates that ID in LangGraph metadata and to both MCP servers.
 
 Structured JSON events cover HTTP requests, agent build/run lifecycle (`agent_name`:
-`supervisor`, `logged_in`, `portfolio`, or `research`), and MCP tool calls. Events include safe
+`supervisor`, `logged_in`, `portfolio`, `research`, or `save_recommendation`), and MCP tool calls. Events include safe
 metadata such as durations, model/tool names, argument names, and result sizes.
 They omit prompts, replies, tool argument values, credentials, and API keys. Follow them locally with:
 
@@ -188,7 +189,7 @@ promptfoo view
 |------|-------------------|
 | Capabilities question | Supervisor can finish without tools |
 | Alice portfolio | Supervisor → portfolio → logged_in |
-| Local-folder recommender | Supervisor → portfolio → logged_in → research (`searchLocalFolder`) |
+| Local-folder recommender | Supervisor → portfolio → logged_in → research (`searchLocalFolder`) → save_recommendation |
 
 ---
 

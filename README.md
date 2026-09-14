@@ -28,16 +28,17 @@ Apira uses **both**:
 - **LangGraph** owns the parent graph: named nodes and edges, not a hidden `create_agent` loop.
 
 ```
-START → supervisor → portfolio → logged_in → research → logged_in → END
+START → supervisor → portfolio → logged_in → research → save_recommendation → logged_in → END
 ```
 
-The first supervisor cannot route to research. Portfolio sets `logged_in` on graph state; only that hop may send work to research. `POST /chat` is the HTTP door (not a graph node). The supervisor answers chat or routes.
+The first supervisor cannot route to research and has no tools. Portfolio sets `logged_in` and `user_id`. Only the logged-in supervisor binds `getPreviousRecommendation`. After research, `save_recommendation` upserts the row (not a tool). Logged-in may return to portfolio (refresh), but the prompt tells it not to while holdings are static.
 
 | Node | Role | MCP tools |
 |------|------|-----------|
 | **supervisor** | Pre-login: answer chat or send to portfolio | none (`agents/supervisor/`) |
 | **portfolio** | Login and holdings; marks the session logged in | `login`, `get_portfolio` (`agents/portfolio_sub_agent/mcp_tools/`) |
-| **logged_in** | Post-portfolio supervisor: research or finish | none (`agents/supervisor/`) |
+| **logged_in** | Post-portfolio supervisor: route to research/finish, or call `getPreviousRecommendation` | `getPreviousRecommendation` only |
+| **save_recommendation** | After research: upsert last rec | supervisor (`PUT /recommendation`; MCP `saveRecommendation` is the same API) |
 | **research** | Citations and Hold/Add/Trim | `searchLocalFolder`, `searchVectorDB` (`agents/research_sub_agent/mcp_tools/`) |
 
 Tool **names stay the same** across packaging modes. Set `TOOL_MODE` to switch how specialists load them:
@@ -62,6 +63,8 @@ LangGraph StateGraph + Gemini
 ├── portfolio → apira-mcp (:8000/mcp)
 │   ├── login → user-service
 │   └── get_portfolio → portfolio-service
+├── logged_in → getPreviousRecommendation (after login only)
+│   └── saveRecommendation is a graph hop after research, not an LLM tool
 └── research → apira-rag (:8200/mcp)  (only after logged_in)
     ├── searchLocalFolder → stock-research/
     └── searchVectorDB → Postgres pgvector (research_chunks)

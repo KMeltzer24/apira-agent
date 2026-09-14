@@ -8,6 +8,8 @@ from agents.portfolio_sub_agent.mcp_tools import TOOL_NAMES as PORTFOLIO_NAMES
 from agents.portfolio_sub_agent.python_tools import load_tools as load_portfolio
 from agents.research_sub_agent.mcp_tools import TOOL_NAMES as RESEARCH_NAMES
 from agents.research_sub_agent.python_tools import load_tools as load_research
+from agents.supervisor.mcp_tools import TOOL_NAMES as SUPERVISOR_NAMES
+from agents.supervisor.python_tools import load_tools as load_supervisor
 
 
 class PythonToolsTests(unittest.TestCase):
@@ -20,6 +22,11 @@ class PythonToolsTests(unittest.TestCase):
         tools = load_research()
         self.assertEqual([t.name for t in tools], ["searchLocalFolder"])
         self.assertTrue(set(t.name for t in tools).issubset(set(RESEARCH_NAMES)))
+
+    def test_supervisor_python_is_previous_recommendation_only(self) -> None:
+        tools = load_supervisor()
+        self.assertEqual([t.name for t in tools], ["getPreviousRecommendation"])
+        self.assertEqual({t.name for t in tools}, set(SUPERVISOR_NAMES))
 
 
 if __name__ == "__main__":

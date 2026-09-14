@@ -15,6 +15,7 @@ from agents.supervisor.agent import (
     enforce_guest_routing,
     enforce_research_routing,
     parse_supervisor_decision,
+    should_call_get_previous_tool,
     SupervisorDecision,
 )
 from agents.tool_mode import (
@@ -24,6 +25,11 @@ from agents.tool_mode import (
     TOOL_MODE_SKILLS_SHELL,
 )
 from langchain_core.messages import AIMessage, HumanMessage
+
+
+class _BindableFake(FakeListChatModel):
+    def bind_tools(self, tools, **kwargs):  # noqa: ANN001
+        return self
 
 
 class _FakeMcpClient:
@@ -57,7 +63,12 @@ def _demo_tools() -> list:
         """Search vectors."""
         return ""
 
-    return [login, get_portfolio, searchLocalFolder, searchVectorDB]
+    @tool
+    def getPreviousRecommendation(user_id: int) -> str:
+        """Last rec."""
+        return "none"
+
+    return [login, get_portfolio, searchLocalFolder, searchVectorDB, getPreviousRecommendation]
 
 
 class SupervisorDecisionTests(unittest.TestCase):
@@ -75,10 +86,24 @@ class SupervisorDecisionTests(unittest.TestCase):
         )
         self.assertEqual(parsed.next, "portfolio")
 
-    def test_parse_logged_in_rejects_portfolio(self) -> None:
+    def test_parse_logged_in_allows_portfolio_refresh(self) -> None:
         parsed = parse_supervisor_decision(
             {"next": "portfolio", "reply": ""},
-            allowed=frozenset({"research", "finish"}),
+            allowed=frozenset({"research", "portfolio", "finish"}),
+        )
+        self.assertEqual(parsed.next, "portfolio")
+
+    def test_parse_guest_maps_previous_rec_to_portfolio(self) -> None:
+        parsed = parse_supervisor_decision(
+            {"next": "previous_recommendation", "reply": ""},
+            allowed=frozenset({"portfolio", "finish"}),
+        )
+        self.assertEqual(parsed.next, "portfolio")
+
+    def test_parse_logged_in_ignores_previous_recommendation_node(self) -> None:
+        parsed = parse_supervisor_decision(
+            {"next": "previous_recommendation", "reply": ""},
+            allowed=frozenset({"research", "portfolio", "finish"}),
         )
         self.assertEqual(parsed.next, "finish")
 
@@ -165,10 +190,41 @@ class SupervisorDecisionTests(unittest.TestCase):
         )
         self.assertEqual(kept.next, "finish")
 
+    def test_enforce_does_not_block_logged_in_portfolio_refresh(self) -> None:
+        messages = [
+            HumanMessage(content="Use searchLocalFolder for recommendations."),
+            AIMessage(content="Holdings: AAPL 150"),
+        ]
+        kept = enforce_research_routing(
+            SupervisorDecision(next="portfolio", reply=""),
+            messages,
+        )
+        self.assertEqual(kept.next, "portfolio")
+
+    def test_logged_in_last_rec_uses_get_tool_not_research(self) -> None:
+        messages = [HumanMessage(content="Show my last recommendation.")]
+        self.assertTrue(should_call_get_previous_tool(messages))
+        kept = enforce_research_routing(
+            SupervisorDecision(next="finish", reply=""),
+            messages,
+        )
+        self.assertEqual(kept.next, "finish")
+
+    def test_enforce_new_research_beats_last_rec_wording(self) -> None:
+        forced = enforce_research_routing(
+            SupervisorDecision(next="finish", reply=""),
+            [
+                HumanMessage(
+                    content="Use searchLocalFolder for a new recommendation."
+                )
+            ],
+        )
+        self.assertEqual(forced.next, "research")
+
 
 class GraphCompileTests(unittest.TestCase):
     def test_compiled_graph_is_sequential_with_logged_in(self) -> None:
-        model = FakeListChatModel(responses=["ok"])
+        model = _BindableFake(responses=["ok"])
         client = _FakeMcpClient(_demo_tools())
         with patch.dict(os.environ, {"TOOL_MODE": TOOL_MODE_MCP}):
             graph = asyncio.run(compile_supervisor_graph(model, client))
@@ -176,10 +232,12 @@ class GraphCompileTests(unittest.TestCase):
         self.assertIn("portfolio", graph.nodes)
         self.assertIn("logged_in", graph.nodes)
         self.assertIn("research", graph.nodes)
+        self.assertNotIn("previous_recommendation", graph.nodes)
+        self.assertIn("save_recommendation", graph.nodes)
         self.assertEqual(client.get_tools_calls, 1)
 
     def test_non_mcp_modes_skip_client_get_tools(self) -> None:
-        model = FakeListChatModel(responses=["ok"])
+        model = _BindableFake(responses=["ok"])
         for mode in (
             TOOL_MODE_PYTHON,
             TOOL_MODE_SKILLS_PROMPT,
@@ -192,7 +250,7 @@ class GraphCompileTests(unittest.TestCase):
             self.assertEqual(client.get_tools_calls, 0, msg=mode)
 
     def test_skills_mcp_still_skips_client_get_tools(self) -> None:
-        model = FakeListChatModel(responses=["ok"])
+        model = _BindableFake(responses=["ok"])
         client = _FakeMcpClient(_demo_tools())
         with patch.dict(
             os.environ,

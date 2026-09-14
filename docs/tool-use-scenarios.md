@@ -48,6 +48,7 @@ When `TOOL_MODE` is `skills_prompt` or `skills_shell`, optional `SKILLS_MCP=true
 - Each specialist **allowlists** tools by name under `mcp_tools/` (implementations live in those servers, not in this repo).
 - Portfolio: `login`, `get_portfolio`
 - Research: `searchLocalFolder`, `searchVectorDB`
+- Logged-in supervisor: `getPreviousRecommendation` (save is a graph hop, not a bound tool)
 
 ### 2. `python`
 
@@ -137,6 +138,12 @@ agents/
       searchLocalFolder_shell_MCP.md
       searchVectorDB_MCP.md
       searchVectorDB_shell_MCP.md
+  supervisor/
+    mcp_tools/              # allowlist getPreviousRecommendation
+    python_tools/           # @tool GET /recommendation
+    skills/
+      getPreviousRecommendation.md
+      getPreviousRecommendation_shell.md
 ```
 
 Skill files are named after the **tool** (`login` / `login_shell`), not the agent (`research` / `research_shell`).
@@ -172,7 +179,9 @@ Docker mounts `../apira-rag/stock-research` → `/data/stock-research` (override
 - `tests/test_python_tools.py` — portfolio tools; research python is local-folder only
 - `tests/test_skills_runtime.py` — codegen fence extract/run; skill tool names; research `*_MCP.md` contracts (curl samples, `RAG_MCP_URL`)
 - `tests/test_local_folder_search.py` — local folder search / CLI
-- `tests/test_graph.py` — sequential graph compile (`logged_in` node); first supervisor cannot choose research; non-MCP modes (including `SKILLS_MCP`) skip `client.get_tools()`; recommender routing after login
+- `tests/test_graph.py` — sequential graph compile (`logged_in`, `save_recommendation`); guest has no get tool; last rec uses `getPreviousRecommendation` after login
+- `tests/test_save_recommendation.py` — user_id extract; supervisor save hop after research
+- `tests/test_supervisor_mcp_tools.py` — supervisor allowlist is `getPreviousRecommendation` only (not `saveRecommendation`)
 - `agents/research_sub_agent/test_agent.py` — specialist build for python / mcp / skills / skills+`SKILLS_MCP`
 
 ```bash

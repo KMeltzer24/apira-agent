@@ -17,7 +17,7 @@ from agents.portfolio_sub_agent.skills import (
     load_prompt_tools,
     load_shell_tools,
 )
-from agents.state import GraphState
+from agents.state import GraphState, extract_user_id
 from agents.tool_mode import (
     TOOL_MODE_MCP,
     TOOL_MODE_PYTHON,
@@ -65,7 +65,11 @@ def _wrap_specialist(subgraph: Any):
             agent_name=AGENT_NAME,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
-        return {"messages": result["messages"], "logged_in": True}
+        return {
+            "messages": result["messages"],
+            "logged_in": True,
+            "user_id": extract_user_id(result["messages"], state.get("user_id")),
+        }
 
     return _node
 
