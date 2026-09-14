@@ -6,8 +6,10 @@ from typing import Annotated
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 
 class GraphState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+    # Set True after the portfolio specialist runs (login + holdings).
+    logged_in: NotRequired[bool]

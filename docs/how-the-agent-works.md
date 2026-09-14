@@ -1,6 +1,6 @@
 # How the Apira Agent Works
 
-A LangGraph **supervisor** that routes to **portfolio** and **research** specialists. Specialists call Apira MCP tools; the LLM is Google Gemini. Agent Chat is the supervisor, not a third specialist.
+A LangGraph **supervisor** that routes **sequentially** through **portfolio**, then a **logged_in** hop, then **research** when needed. Specialists call Apira MCP tools; the LLM is Google Gemini. Agent Chat is the supervisor, not a third specialist.
 
 ---
 
@@ -8,7 +8,7 @@ A LangGraph **supervisor** that routes to **portfolio** and **research** special
 
 | Piece | Choice |
 |-------|--------|
-| Orchestration | **LangGraph** `StateGraph` (`START` → `supervisor` → `portfolio` / `research` → `supervisor` → `END`) |
+| Orchestration | **LangGraph** `StateGraph` (`START` → `supervisor` → `portfolio` → `logged_in` → `research` → `logged_in` → `END`) |
 | Specialists | LangChain `create_agent` subgraphs in `agents/portfolio_sub_agent` and `agents/research_sub_agent` |
 | Tool loading | Shared **langchain-mcp-adapters** client when `TOOL_MODE=mcp`; each sub-agent selects its allowlist. Other modes use `python_tools/` or `skills/` |
 | Model | **Gemini** (`gemini-3.1-flash-lite`, via API key) |
@@ -40,18 +40,19 @@ Skill files are named after the **tool**, not the agent (`login.md` / `login_she
 ```
 agent.py / server.py (prompt)
   ▼
-LangGraph StateGraph + Gemini
-  ├── supervisor (no MCP tools) — chat + routing
+LangGraph StateGraph + Gemini (sequential specialists; POST /chat is HTTP only)
+  ├── supervisor — chat, or route to portfolio only (no tools)
   ├── portfolio → apira-mcp (:8000/mcp) → backend APIs (:8001 / :8002) → Postgres
+  ├── logged_in — post-portfolio supervisor; research is allowed here
   └── research → apira-rag (:8200/mcp)
       ├── stock-research/ files (searchLocalFolder)
       └── research_chunks in Postgres (searchVectorDB / pgvector)
 ```
 
 1. Connect to both MCP servers with one shared client when `TOOL_MODE=mcp`. Each sub-agent loads only its tools via `mcp_tools/` (`login` / `get_portfolio` for portfolio; `searchLocalFolder` / `searchVectorDB` for research). For other modes, specialists load `python_tools/` or `skills/` instead (see **Tool modes** above).
-2. Compile a parent graph in `agents/graph.py`. The supervisor (`agents/supervisor/`) uses structured output (`portfolio` | `research` | `finish`). Specialists keep their own system prompts (portfolio: holdings only; research: call the chosen search tool and cite real filenames — never invent `Files: N/A`).
-3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio"): supervisor → portfolio → supervisor → END.
-4. For recommendations: supervisor → portfolio → supervisor → research → supervisor → END. Chat starts as `{"role": "user", ...}`; if the LLM tries to `finish` after holdings while the user still asked for search/Hold-Add-Trim and no research tool has run, `enforce_research_routing` forces `research` next.
+2. Compile a parent graph in `agents/graph.py`. The first supervisor’s structured output is `portfolio` | `finish` (research is not a legal destination). After portfolio, `logged_in` is set on graph state and the logged-in supervisor may choose `research` | `finish`. Specialists keep their own system prompts (portfolio: holdings only; research: call the chosen search tool and cite real filenames — never invent `Files: N/A`).
+3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio"): supervisor → portfolio → logged_in → END.
+4. For recommendations: supervisor → portfolio → logged_in → research → logged_in → END. The first hop cannot skip to research; `enforce_guest_routing` sends research asks to portfolio first. After holdings, if the user still asked for search/Hold-Add-Trim and no research tool has run, `enforce_research_routing` forces `research` next. `POST /chat` always enters this graph; it does not call MCP tools itself.
 
 In `TOOL_MODE=mcp`, the agent does not hardcode the API shape — it discovers tools at runtime. Login, user-service, portfolio-service, and RAG stay tools/services, not graph agents.
 
@@ -79,7 +80,7 @@ the response, and keeps it active throughout the agent run. `agent.py`
 propagates that ID in LangGraph metadata and to both MCP servers.
 
 Structured JSON events cover HTTP requests, agent build/run lifecycle (`agent_name`:
-`supervisor`, `portfolio`, or `research`), and MCP tool calls. Events include safe
+`supervisor`, `logged_in`, `portfolio`, or `research`), and MCP tool calls. Events include safe
 metadata such as durations, model/tool names, argument names, and result sizes.
 They omit prompts, replies, tool argument values, credentials, and API keys. Follow them locally with:
 
@@ -153,7 +154,7 @@ For the Recommender path, see [apira-rag/docs/how-stock-recommender-works.md](ht
 | `httpx.ConnectError: All connection attempts failed` | An MCP URL is unavailable, or (non-MCP) REST URLs point at `localhost` inside Docker | Check `MCP_URL` / `RAG_MCP_URL`, or use `host.docker.internal` for `USER_SERVICE_URL` / `PORTFOLIO_SERVICE_URL` |
 | `Stock research folder not found` | Host path leaked into the container as `STOCK_RESEARCH_DIR` | Set `STOCK_RESEARCH_DIR=/data/stock-research` for Docker |
 | `skill bash exited 127: curl: command not found` | Old image without curl | Rebuild agent image (`docker compose up -d --build`); Dockerfile installs curl for `skills_shell` |
-| Recommender answers Hold with `Files: N/A` / “no research access” | Supervisor finished after portfolio without research | Ensure current agent build (routing enforcement); logs should show `routed to research` then `searchLocalFolder` / `searchVectorDB` |
+| Recommender answers Hold with `Files: N/A` / “no research access” | Logged-in supervisor finished after portfolio without research | Ensure current agent build (guest cannot skip portfolio; `enforce_research_routing` after login); logs should show `logged_in` then `routed to research` then `searchLocalFolder` / `searchVectorDB` |
 | `DefaultCredentialsError` / 401 / 403 from Gemini | Missing or invalid `GOOGLE_API_KEY` | Set a valid key from aistudio.google.com/apikey |
 | Gemini `503` high demand / quota exhausted | Temporary capacity or project quota | Retry later, switch `LLM_MODEL`, or raise quota / use a new key |
 | `zsh: bad pattern: #` | Inline `#` comment after a command | Run the command alone, no trailing comment |
@@ -186,8 +187,8 @@ promptfoo view
 | Case | What it exercises |
 |------|-------------------|
 | Capabilities question | Supervisor can finish without tools |
-| Alice portfolio | Supervisor → portfolio specialist |
-| Local-folder recommender | Supervisor → portfolio → research (`searchLocalFolder`) |
+| Alice portfolio | Supervisor → portfolio → logged_in |
+| Local-folder recommender | Supervisor → portfolio → logged_in → research (`searchLocalFolder`) |
 
 ---
 

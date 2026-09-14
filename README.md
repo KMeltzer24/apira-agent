@@ -28,13 +28,16 @@ Apira uses **both**:
 - **LangGraph** owns the parent graph: named nodes and edges, not a hidden `create_agent` loop.
 
 ```
-START → supervisor → portfolio | research → supervisor → END
+START → supervisor → portfolio → logged_in → research → logged_in → END
 ```
+
+The first supervisor cannot route to research. Portfolio sets `logged_in` on graph state; only that hop may send work to research. `POST /chat` is the HTTP door (not a graph node). The supervisor answers chat or routes.
 
 | Node | Role | MCP tools |
 |------|------|-----------|
-| **supervisor** | Chat agent: answer directly or route | none (`agents/supervisor/`) |
-| **portfolio** | Login and holdings | `login`, `get_portfolio` (`agents/portfolio_sub_agent/mcp_tools/`) |
+| **supervisor** | Pre-login: answer chat or send to portfolio | none (`agents/supervisor/`) |
+| **portfolio** | Login and holdings; marks the session logged in | `login`, `get_portfolio` (`agents/portfolio_sub_agent/mcp_tools/`) |
+| **logged_in** | Post-portfolio supervisor: research or finish | none (`agents/supervisor/`) |
 | **research** | Citations and Hold/Add/Trim | `searchLocalFolder`, `searchVectorDB` (`agents/research_sub_agent/mcp_tools/`) |
 
 Tool **names stay the same** across packaging modes. Set `TOOL_MODE` to switch how specialists load them:
@@ -46,7 +49,7 @@ Tool **names stay the same** across packaging modes. Set `TOOL_MODE` to switch h
 | `skills_prompt` | NL `skills/<tool>.md` → Gemini generates python/bash → execute (real tools). With `SKILLS_MCP=true`, research uses `*_MCP.md` and calls RAG MCP directly (includes `searchVectorDB`) |
 | `skills_shell` | `skills/<tool>_shell.md` same codegen path; sample bash is a hint. With `SKILLS_MCP=true`, research uses `*_shell_MCP.md` (folder + vector via MCP) |
 
-Agent Chat and Stock Recommender both `POST /chat`; the supervisor decides which specialist(s) to run. Login and the FastAPI services stay tools, not agents.
+Agent Chat and Stock Recommender both `POST /chat`. The first supervisor can only send work to portfolio; research runs only after the logged-in hop. Login and the FastAPI services stay tools, not agents.
 
 ## How it works
 
@@ -54,17 +57,17 @@ Agent Chat and Stock Recommender both `POST /chat`; the supervisor decides which
 agent.py / server.py (prompt)
   ▼
 LangGraph StateGraph + Gemini
-  │  supervisor routes; specialists call MCP
+  │  sequential: supervisor → portfolio → logged_in → research
   ▼
 ├── portfolio → apira-mcp (:8000/mcp)
 │   ├── login → user-service
 │   └── get_portfolio → portfolio-service
-└── research → apira-rag (:8200/mcp)
+└── research → apira-rag (:8200/mcp)  (only after logged_in)
     ├── searchLocalFolder → stock-research/
     └── searchVectorDB → Postgres pgvector (research_chunks)
 ```
 
-The graph loads tools from a shared MCP client; each sub-agent keeps its own allowlist under `mcp_tools/` (`portfolio_sub_agent`, `research_sub_agent`). The supervisor answers or routes; specialists do not share tools with each other in the codebase.
+The graph loads tools from a shared MCP client; each sub-agent keeps its own allowlist under `mcp_tools/` (`portfolio_sub_agent`, `research_sub_agent`). The first supervisor answers or sends to portfolio; research is unlocked only after that specialist returns. Specialists do not share tools with each other in the codebase.
 
 `server.py` wraps the compiled graph in a FastAPI service (built lazily on the first request, so the server boots instantly):
 

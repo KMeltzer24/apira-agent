@@ -65,7 +65,7 @@ def _wrap_specialist(subgraph: Any):
             agent_name=AGENT_NAME,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
-        return {"messages": result["messages"]}
+        return {"messages": result["messages"], "logged_in": True}
 
     return _node
 

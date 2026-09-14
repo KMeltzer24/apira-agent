@@ -1,4 +1,4 @@
-"""Supervisor node: structured routing, hop limit, no tools."""
+"""Supervisor nodes: guest then logged-in routing, hop limit, no tools."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from agents.state import GraphState
-from agents.supervisor.prompt import SUPERVISOR_PROMPT
+from agents.supervisor.prompt import LOGGED_IN_SUPERVISOR_PROMPT, SUPERVISOR_PROMPT
 from logging_config import log_event
 
 logger = logging.getLogger(__name__)
@@ -31,10 +31,34 @@ _RESEARCH_TOOL_NAMES = frozenset({"searchLocalFolder", "searchVectorDB"})
 
 _supervisor_hops: ContextVar[int] = ContextVar("supervisor_hops", default=0)
 
+GuestNext = Literal["portfolio", "finish"]
+LoggedInNext = Literal["research", "finish"]
+SupervisorNext = Literal["portfolio", "research", "finish"]
+
 
 class SupervisorDecision(BaseModel):
-    next: Literal["portfolio", "research", "finish"] = Field(
+    next: SupervisorNext = Field(
         description="Who should run next, or finish the turn."
+    )
+    reply: str = Field(
+        default="",
+        description="User-facing text when next is finish and specialists have not answered.",
+    )
+
+
+class GuestDecision(BaseModel):
+    next: GuestNext = Field(
+        description="Portfolio specialist, or finish. Research is not allowed until logged in."
+    )
+    reply: str = Field(
+        default="",
+        description="User-facing text when next is finish and specialists have not answered.",
+    )
+
+
+class LoggedInDecision(BaseModel):
+    next: LoggedInNext = Field(
+        description="Research specialist, or finish. Portfolio already ran."
     )
     reply: str = Field(
         default="",
@@ -47,25 +71,36 @@ def reset_supervisor_hops() -> None:
     _supervisor_hops.set(0)
 
 
-def parse_supervisor_decision(raw: Any) -> SupervisorDecision:
+def parse_supervisor_decision(
+    raw: Any,
+    *,
+    allowed: frozenset[str] | None = None,
+) -> SupervisorDecision:
     """Normalize structured or loosely parsed supervisor output."""
-    if isinstance(raw, SupervisorDecision):
-        return raw
-    if isinstance(raw, dict):
+    allowed_next = allowed or frozenset({"portfolio", "research", "finish"})
+    if isinstance(raw, (SupervisorDecision, GuestDecision, LoggedInDecision)):
+        nxt = raw.next
+        reply = raw.reply
+    elif isinstance(raw, dict):
         nxt = str(raw.get("next", "finish")).strip().lower()
-        if nxt not in {"portfolio", "research", "finish"}:
+        reply = str(raw.get("reply") or "")
+    else:
+        text = getattr(raw, "content", raw)
+        if not isinstance(text, str):
+            text = str(text)
+        lowered = text.lower()
+        nxt = "finish"
+        if "research" in lowered:
+            nxt = "research"
+        elif "portfolio" in lowered or "login" in lowered:
+            nxt = "portfolio"
+        reply = ""
+    if nxt not in allowed_next:
+        if nxt == "research" and "portfolio" in allowed_next:
+            nxt = "portfolio"
+        else:
             nxt = "finish"
-        return SupervisorDecision(next=nxt, reply=str(raw.get("reply") or ""))
-    text = getattr(raw, "content", raw)
-    if not isinstance(text, str):
-        text = str(text)
-    lowered = text.lower()
-    nxt: Literal["portfolio", "research", "finish"] = "finish"
-    if "research" in lowered:
-        nxt = "research"
-    elif "portfolio" in lowered or "login" in lowered:
-        nxt = "portfolio"
-    return SupervisorDecision(next=nxt, reply="")
+    return SupervisorDecision(next=nxt, reply=reply)
 
 
 def _is_human_message(message: Any) -> bool:
@@ -129,13 +164,29 @@ def research_tools_already_used(messages: Sequence[Any]) -> bool:
     return False
 
 
+def enforce_guest_routing(
+    decision: SupervisorDecision,
+    messages: Sequence[Any],
+    *,
+    forced_finish: bool = False,
+) -> SupervisorDecision:
+    """Guest supervisor: research is closed; research asks go to portfolio first."""
+    if forced_finish:
+        return SupervisorDecision(next="finish", reply=decision.reply)
+    if decision.next == "research":
+        return SupervisorDecision(next="portfolio", reply="")
+    if decision.next == "finish" and user_requested_research(messages):
+        return SupervisorDecision(next="portfolio", reply="")
+    return decision
+
+
 def enforce_research_routing(
     decision: SupervisorDecision,
     messages: Sequence[Any],
     *,
     forced_finish: bool = False,
 ) -> SupervisorDecision:
-    """If the user asked for research and it has not run, do not finish early."""
+    """Logged-in supervisor: if the user asked for research and it has not run, do not finish."""
     if forced_finish or decision.next != "finish":
         return decision
     if user_requested_research(messages) and not research_tools_already_used(messages):
@@ -143,10 +194,22 @@ def enforce_research_routing(
     return decision
 
 
-def build_node(model: Any):
-    """Return the async supervisor graph node (routing only)."""
+def build_node(model: Any, *, logged_in: bool = False):
+    """Return a supervisor graph node.
+
+    ``logged_in=False`` is the guest hop (portfolio or finish only).
+    ``logged_in=True`` is the post-portfolio hop (research or finish only).
+    """
+    schema = LoggedInDecision if logged_in else GuestDecision
+    prompt = LOGGED_IN_SUPERVISOR_PROMPT if logged_in else SUPERVISOR_PROMPT
+    allowed = (
+        frozenset({"research", "finish"})
+        if logged_in
+        else frozenset({"portfolio", "finish"})
+    )
+    agent_name = "logged_in" if logged_in else "supervisor"
     try:
-        structured = model.with_structured_output(SupervisorDecision)
+        structured = model.with_structured_output(schema)
     except NotImplementedError:
         structured = None
 
@@ -159,7 +222,7 @@ def build_node(model: Any):
             logging.INFO,
             "agent.run.started",
             "supervisor hop started",
-            agent_name="supervisor",
+            agent_name=agent_name,
         )
         forced_finish = hops > MAX_SUPERVISOR_HOPS
         try:
@@ -167,26 +230,33 @@ def build_node(model: Any):
                 decision = SupervisorDecision(next="finish", reply="")
             else:
                 route_messages = [
-                    {"role": "system", "content": SUPERVISOR_PROMPT},
+                    {"role": "system", "content": prompt},
                     *state["messages"],
                 ]
                 if structured is not None:
                     raw = await structured.ainvoke(route_messages)
                 else:
                     raw = await model.ainvoke(route_messages)
-                decision = parse_supervisor_decision(raw)
-                decision = enforce_research_routing(
-                    decision,
-                    state["messages"],
-                    forced_finish=forced_finish,
-                )
+                decision = parse_supervisor_decision(raw, allowed=allowed)
+                if logged_in:
+                    decision = enforce_research_routing(
+                        decision,
+                        state["messages"],
+                        forced_finish=forced_finish,
+                    )
+                else:
+                    decision = enforce_guest_routing(
+                        decision,
+                        state["messages"],
+                        forced_finish=forced_finish,
+                    )
         except Exception as exc:
             log_event(
                 logger,
                 logging.ERROR,
                 "agent.run.failed",
                 "supervisor hop failed",
-                agent_name="supervisor",
+                agent_name=agent_name,
                 duration_ms=round((time.perf_counter() - started) * 1000, 2),
                 error_type=type(exc).__name__,
             )
@@ -198,7 +268,7 @@ def build_node(model: Any):
             logging.INFO,
             "agent.run.completed",
             f"supervisor routed to {next_node}",
-            agent_name="supervisor",
+            agent_name=agent_name,
             next_node=next_node,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )

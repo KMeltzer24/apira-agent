@@ -172,7 +172,7 @@ Docker mounts `../apira-rag/stock-research` → `/data/stock-research` (override
 - `tests/test_python_tools.py` — portfolio tools; research python is local-folder only
 - `tests/test_skills_runtime.py` — codegen fence extract/run; skill tool names; research `*_MCP.md` contracts (curl samples, `RAG_MCP_URL`)
 - `tests/test_local_folder_search.py` — local folder search / CLI
-- `tests/test_graph.py` — graph compile; non-MCP modes (including `SKILLS_MCP`) skip `client.get_tools()`; recommender routing enforcement (including dict-style user messages)
+- `tests/test_graph.py` — sequential graph compile (`logged_in` node); first supervisor cannot choose research; non-MCP modes (including `SKILLS_MCP`) skip `client.get_tools()`; recommender routing after login
 - `agents/research_sub_agent/test_agent.py` — specialist build for python / mcp / skills / skills+`SKILLS_MCP`
 
 ```bash

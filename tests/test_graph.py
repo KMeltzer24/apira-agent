@@ -12,6 +12,7 @@ from langchain_core.tools import tool
 
 from agents.graph import compile_supervisor_graph
 from agents.supervisor.agent import (
+    enforce_guest_routing,
     enforce_research_routing,
     parse_supervisor_decision,
     SupervisorDecision,
@@ -66,6 +67,49 @@ class SupervisorDecisionTests(unittest.TestCase):
         self.assertEqual(parsed.reply, "hi")
         fallback = parse_supervisor_decision({"next": "tools"})
         self.assertEqual(fallback.next, "finish")
+
+    def test_parse_guest_maps_research_to_portfolio(self) -> None:
+        parsed = parse_supervisor_decision(
+            {"next": "research", "reply": ""},
+            allowed=frozenset({"portfolio", "finish"}),
+        )
+        self.assertEqual(parsed.next, "portfolio")
+
+    def test_parse_logged_in_rejects_portfolio(self) -> None:
+        parsed = parse_supervisor_decision(
+            {"next": "portfolio", "reply": ""},
+            allowed=frozenset({"research", "finish"}),
+        )
+        self.assertEqual(parsed.next, "finish")
+
+    def test_enforce_guest_blocks_research(self) -> None:
+        forced = enforce_guest_routing(
+            SupervisorDecision(next="research", reply=""),
+            [HumanMessage(content="hello")],
+        )
+        self.assertEqual(forced.next, "portfolio")
+
+    def test_enforce_guest_research_request_goes_to_portfolio(self) -> None:
+        forced = enforce_guest_routing(
+            SupervisorDecision(next="finish", reply="done"),
+            [
+                HumanMessage(
+                    content=(
+                        "Log in as alice. Use searchLocalFolder only. "
+                        "Respond with Hold / Add / Trim and Files: lines."
+                    )
+                )
+            ],
+        )
+        self.assertEqual(forced.next, "portfolio")
+        self.assertEqual(forced.reply, "")
+
+    def test_enforce_guest_allows_finish_for_chat(self) -> None:
+        kept = enforce_guest_routing(
+            SupervisorDecision(next="finish", reply="I can look up holdings."),
+            [HumanMessage(content="What can you do?")],
+        )
+        self.assertEqual(kept.next, "finish")
 
     def test_enforce_research_after_portfolio_finish(self) -> None:
         messages = [
@@ -123,13 +167,14 @@ class SupervisorDecisionTests(unittest.TestCase):
 
 
 class GraphCompileTests(unittest.TestCase):
-    def test_compiled_graph_has_supervisor_and_specialists(self) -> None:
+    def test_compiled_graph_is_sequential_with_logged_in(self) -> None:
         model = FakeListChatModel(responses=["ok"])
         client = _FakeMcpClient(_demo_tools())
         with patch.dict(os.environ, {"TOOL_MODE": TOOL_MODE_MCP}):
             graph = asyncio.run(compile_supervisor_graph(model, client))
         self.assertIn("supervisor", graph.nodes)
         self.assertIn("portfolio", graph.nodes)
+        self.assertIn("logged_in", graph.nodes)
         self.assertIn("research", graph.nodes)
         self.assertEqual(client.get_tools_calls, 1)
 
