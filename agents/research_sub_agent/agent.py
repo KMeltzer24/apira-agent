@@ -27,6 +27,7 @@ from agents.tool_mode import (
     TOOL_MODE_SKILLS_PROMPT,
     TOOL_MODE_SKILLS_SHELL,
     get_tool_mode,
+    skills_mcp_enabled,
 )
 from logging_config import log_event
 
@@ -95,10 +96,18 @@ async def build_agent(
         prompt = RESEARCH_PROMPT_LOCAL_FOLDER
     elif mode == TOOL_MODE_SKILLS_PROMPT:
         selected_tools = load_prompt_tools(model)
-        prompt = RESEARCH_PROMPT_LOCAL_FOLDER
+        prompt = (
+            RESEARCH_PROMPT
+            if skills_mcp_enabled(mode=mode)
+            else RESEARCH_PROMPT_LOCAL_FOLDER
+        )
     elif mode == TOOL_MODE_SKILLS_SHELL:
         selected_tools = load_shell_tools(model)
-        prompt = RESEARCH_PROMPT_LOCAL_FOLDER
+        prompt = (
+            RESEARCH_PROMPT
+            if skills_mcp_enabled(mode=mode)
+            else RESEARCH_PROMPT_LOCAL_FOLDER
+        )
     else:
         raise ValueError(f"Unsupported TOOL_MODE for research: {mode}")
 

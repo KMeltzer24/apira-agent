@@ -14,7 +14,7 @@ RESEARCH_PROMPT = (
     "Be concise — no sector overview, no holdings summary list."
 )
 
-# Used when TOOL_MODE is python / skills_* (searchVectorDB is MCP-only).
+# Used when TOOL_MODE is python / skills_* without SKILLS_MCP.
 RESEARCH_PROMPT_LOCAL_FOLDER = (
     "You are the Apira research specialist. "
     "You have searchLocalFolder to search stock-research files on disk. "

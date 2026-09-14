@@ -20,6 +20,8 @@ TOOL_MODES = frozenset(
 
 DEFAULT_TOOL_MODE = TOOL_MODE_MCP
 
+_SKILLS_MCP_TRUE = frozenset({"1", "true", "yes", "on"})
+
 
 def get_tool_mode(raw: str | None = None) -> str:
     """Return a validated TOOL_MODE (default: mcp)."""
@@ -30,3 +32,16 @@ def get_tool_mode(raw: str | None = None) -> str:
             f"Invalid TOOL_MODE={value!r}; expected one of {sorted(TOOL_MODES)}"
         )
     return mode
+
+
+def skills_mcp_enabled(*, mode: str | None = None) -> bool:
+    """Whether skills codegen should call MCP from ``*_MCP.md`` skill files.
+
+    ``SKILLS_MCP`` is ignored unless ``TOOL_MODE`` is ``skills_prompt`` or
+    ``skills_shell``.
+    """
+    current = get_tool_mode() if mode is None else mode
+    if current not in {TOOL_MODE_SKILLS_PROMPT, TOOL_MODE_SKILLS_SHELL}:
+        return False
+    raw = os.environ.get("SKILLS_MCP", "")
+    return raw.strip().lower() in _SKILLS_MCP_TRUE

@@ -36,6 +36,8 @@ TOOL_MODE=skills_shell docker compose up -d --force-recreate
 
 Validated in [`agents/tool_mode.py`](../agents/tool_mode.py). Specialists read it in `portfolio_sub_agent/agent.py` and `research_sub_agent/agent.py`. The parent graph only fetches MCP tools when mode is `mcp`.
 
+When `TOOL_MODE` is `skills_prompt` or `skills_shell`, optional `SKILLS_MCP=true` switches research to `*_MCP.md` / `*_shell_MCP.md`. Generated code calls `RAG_MCP_URL` directly (not `mcp_tools/`, `python_tools/`, or the local-folder skill files). Ignored in `mcp` and `python` modes.
+
 ---
 
 ## Mode details
@@ -55,7 +57,7 @@ LangChain `@tool` under each agent’s `python_tools/`:
 |------|-----------|
 | `login` / `get_portfolio` | `httpx` to `USER_SERVICE_URL` / `PORTFOLIO_SERVICE_URL` (same REST as behind apira-mcp) |
 | `searchLocalFolder` | Local folder walk in [`python_tools/local_folder_search.py`](../agents/research_sub_agent/python_tools/local_folder_search.py) over `STOCK_RESEARCH_DIR` |
-| `searchVectorDB` | **Not registered** (MCP-only; see below) |
+| `searchVectorDB` | **Not registered** (use `TOOL_MODE=mcp` or skills + `SKILLS_MCP`) |
 
 ### 3. `skills_prompt`
 
@@ -77,27 +79,34 @@ Examples of sample hints:
 - Portfolio: `curl` sketches (`login_shell.md`, `get_portfolio_shell.md`)
 - Research: inline filesystem search sample (`searchLocalFolder_shell.md`) — not `python_tools` / `local_folder_search`
 
-The agent Docker image installs **`curl`** so generated/sample bash can use it. There is **no** `searchVectorDB_shell.md`.
+The agent Docker image installs **`curl`** so generated/sample bash can use it.
+
+### Skills → MCP (`SKILLS_MCP=true`)
+
+Same skills codegen path, but research skill files tell Gemini to call RAG MCP over Streamable HTTP:
+
+- `searchLocalFolder_MCP.md` / `searchLocalFolder_shell_MCP.md`
+- `searchVectorDB_MCP.md` / `searchVectorDB_shell_MCP.md`
+
+The generated program must talk to `${RAG_MCP_URL}` only. It must not import this repo’s `python_tools`, `mcp_tools`, or the non-MCP skill markdown.
+
+- Prompt `*_MCP.md`: NL contract (JSON-RPC `tools/call` or any MCP client is fine).
+- Shell `*_shell_MCP.md`: sample **curl** JSON-RPC (`initialize` → `Mcp-Session-Id` → `tools/call`), same style as portfolio `*_shell.md`.
 
 ---
 
 ## Research special case: `searchVectorDB`
 
-Vector search (embeddings, pgvector, ranking) lives in **apira-rag**. Duplicating that in the agent would put the same logic in two places and fight the point of the packaging split.
-
-**Decision (with mentor):**
-
-- Give `searchLocalFolder` a real non-MCP path (Python + skills).
-- Leave `searchVectorDB` on the RAG MCP server only.
+Vector search (embeddings, pgvector, ranking) lives in **apira-rag**. The python and default skills paths do not reimplement it.
 
 | Mode | `searchLocalFolder` | `searchVectorDB` |
 |------|---------------------|------------------|
-| `mcp` | RAG MCP | RAG MCP |
+| `mcp` | RAG MCP (via `mcp_tools/` allowlist) | RAG MCP |
 | `python` | Local files | Not available |
-| `skills_shell` | Codegen → local search | Not available |
-| `skills_prompt` | Codegen → local search | Not available |
+| `skills_prompt` / `skills_shell` | Codegen → local search | Not available |
+| same + `SKILLS_MCP=true` | Codegen → RAG MCP (`*_MCP.md`) | Codegen → RAG MCP |
 
-If the user asks for vector search while `TOOL_MODE` is not `mcp`, the model has no `searchVectorDB` tool. It may use `searchLocalFolder`, answer without tools, or say it cannot run vector search. To use vector search for real, set `TOOL_MODE=mcp` and restart.
+If the user asks for vector search while skills MCP is off and `TOOL_MODE` is not `mcp`, the model has no `searchVectorDB` tool.
 
 The apira-rag pipeline itself was **not** changed.
 
@@ -124,6 +133,10 @@ agents/
     skills/
       searchLocalFolder.md
       searchLocalFolder_shell.md
+      searchLocalFolder_MCP.md
+      searchLocalFolder_shell_MCP.md
+      searchVectorDB_MCP.md
+      searchVectorDB_shell_MCP.md
 ```
 
 Skill files are named after the **tool** (`login` / `login_shell`), not the agent (`research` / `research_shell`).
@@ -135,7 +148,8 @@ Skill files are named after the **tool** (`login` / `login_shell`), not the agen
 | Variable | Used by | Purpose |
 |----------|---------|---------|
 | `TOOL_MODE` | All | `mcp` \| `python` \| `skills_prompt` \| `skills_shell` |
-| `MCP_URL` / `RAG_MCP_URL` | `mcp` | MCP servers |
+| `SKILLS_MCP` | `skills_prompt`, `skills_shell` | `true` → research `*_MCP.md` calls RAG MCP |
+| `MCP_URL` / `RAG_MCP_URL` | `mcp`; skills + `SKILLS_MCP` | MCP servers |
 | `USER_SERVICE_URL` / `PORTFOLIO_SERVICE_URL` | `python`, `skills_prompt`, `skills_shell` | Portfolio REST (python tools; also env for skill-generated code) |
 | `STOCK_RESEARCH_DIR` | `python`, `skills_prompt`, `skills_shell` | Local research corpus for `searchLocalFolder` |
 
@@ -147,18 +161,19 @@ Docker mounts `../apira-rag/stock-research` → `/data/stock-research` (override
 
 | Module | Role |
 |--------|------|
-| `agents/tool_mode.py` | Read/validate `TOOL_MODE` |
+| `agents/tool_mode.py` | Read/validate `TOOL_MODE`; `SKILLS_MCP` in skills modes |
 | `agents/skills_runtime.py` | Skill markdown load; codegen fence extract/run; build skill tools |
 
 ---
 
 ## Tests
 
-- `tests/test_tool_mode.py` — mode parsing
+- `tests/test_tool_mode.py` — mode parsing; `SKILLS_MCP` only in skills modes
 - `tests/test_python_tools.py` — portfolio tools; research python is local-folder only
-- `tests/test_skills_runtime.py` — codegen fence extract/run; skill tool names
+- `tests/test_skills_runtime.py` — codegen fence extract/run; skill tool names; research `*_MCP.md` contracts (curl samples, `RAG_MCP_URL`)
 - `tests/test_local_folder_search.py` — local folder search / CLI
-- `tests/test_graph.py` — graph compile; non-MCP modes skip `client.get_tools()`; recommender routing enforcement (including dict-style user messages)
+- `tests/test_graph.py` — graph compile; non-MCP modes (including `SKILLS_MCP`) skip `client.get_tools()`; recommender routing enforcement (including dict-style user messages)
+- `agents/research_sub_agent/test_agent.py` — specialist build for python / mcp / skills / skills+`SKILLS_MCP`
 
 ```bash
 python -m unittest discover -s tests
@@ -181,6 +196,7 @@ TOOL_MODE=skills_shell docker compose up -d --force-recreate
 # NL skills (codegen on each tool call — same outcomes as shell/python for local folder)
 TOOL_MODE=skills_prompt docker compose up -d --force-recreate
 
-# Vector recommender still needs MCP mode
-TOOL_MODE=mcp docker compose up -d --force-recreate
+# Vector via skills codegen that calls RAG MCP (no mcp_tools/ python_tools)
+TOOL_MODE=skills_prompt SKILLS_MCP=true docker compose up -d --force-recreate
+TOOL_MODE=skills_shell SKILLS_MCP=true docker compose up -d --force-recreate
 ```

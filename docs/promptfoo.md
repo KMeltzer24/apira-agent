@@ -29,7 +29,7 @@ The suite maps to the main paths of the multi-agent system:
 
 Each test covers one major supervisor route rather than an arbitrary prompt.
 
-**Prerequisite for test 4:** local Postgres has been ingested (`research_chunks` populated). See [apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md) and `apira-rag` ingest scripts. The agent must run with `TOOL_MODE=mcp` (default) because `searchVectorDB` is MCP-only — see [tool-use-scenarios.md](tool-use-scenarios.md).
+**Prerequisite for test 4:** local Postgres has been ingested (`research_chunks` populated). See [apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md) and `apira-rag` ingest scripts. `searchVectorDB` needs RAG MCP: `TOOL_MODE=mcp` (default), or `skills_prompt` / `skills_shell` with `SKILLS_MCP=true` — see [tool-use-scenarios.md](tool-use-scenarios.md).
 
 ---
 

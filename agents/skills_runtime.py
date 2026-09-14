@@ -33,8 +33,9 @@ _CODEGEN_SYSTEM = (
     "block in python, bash, or sh that does the work. "
     "Print the result to stdout (typically JSON). "
     "Use environment variables from the prompt when URLs or paths are needed. "
-    "Do not invent credentials, user_ids, or file contents — call the real APIs "
-    "or search the real folder. "
+    "Do not invent credentials, user_ids, or file contents — call the real APIs, "
+    "search the real folder, or call the MCP URL when the skill says to. "
+    "Do not import Apira python_tools, mcp_tools packages, or other skill files. "
     "If the skill includes sample bash, treat it as a hint you may adapt; "
     "still emit your own single fence to run."
 )
@@ -44,20 +45,30 @@ def skill_root(skills_pkg_dir: Path | str) -> Path:
     return Path(skills_pkg_dir)
 
 
-def prompt_skill_path(skills_dir: Path | str, tool_name: str) -> Path:
-    return skill_root(skills_dir) / f"{tool_name}.md"
+def prompt_skill_path(
+    skills_dir: Path | str, tool_name: str, *, mcp: bool = False
+) -> Path:
+    suffix = "_MCP.md" if mcp else ".md"
+    return skill_root(skills_dir) / f"{tool_name}{suffix}"
 
 
-def shell_skill_path(skills_dir: Path | str, tool_name: str) -> Path:
-    return skill_root(skills_dir) / f"{tool_name}_shell.md"
+def shell_skill_path(
+    skills_dir: Path | str, tool_name: str, *, mcp: bool = False
+) -> Path:
+    suffix = "_shell_MCP.md" if mcp else "_shell.md"
+    return skill_root(skills_dir) / f"{tool_name}{suffix}"
 
 
 def skill_path_for(
-    skills_dir: Path | str, tool_name: str, *, kind: SkillKind
+    skills_dir: Path | str,
+    tool_name: str,
+    *,
+    kind: SkillKind,
+    mcp: bool = False,
 ) -> Path:
     if kind == "shell":
-        return shell_skill_path(skills_dir, tool_name)
-    return prompt_skill_path(skills_dir, tool_name)
+        return shell_skill_path(skills_dir, tool_name, mcp=mcp)
+    return prompt_skill_path(skills_dir, tool_name, mcp=mcp)
 
 
 def read_skill_markdown(path: Path) -> str:
@@ -170,6 +181,8 @@ def _build_codegen_user_prompt(
             "USER_SERVICE_URL",
             "PORTFOLIO_SERVICE_URL",
             "STOCK_RESEARCH_DIR",
+            "RAG_MCP_URL",
+            "MCP_URL",
             "X_REQUEST_ID",
             "PYTHONPATH",
             "PYTHON_BIN",
@@ -197,10 +210,11 @@ def make_codegen_skill_tool(
     kind: SkillKind,
     extra_env: Callable[[], dict[str, str]] | None = None,
     timeout_sec: float = 60.0,
+    mcp: bool = False,
 ) -> StructuredTool:
     """Build a tool that asks the model to codegen from a skill, then runs it."""
 
-    path = skill_path_for(skills_dir, tool_name, kind=kind)
+    path = skill_path_for(skills_dir, tool_name, kind=kind, mcp=mcp)
     schema = _args_schema_for(tool_name, arg_fields)
 
     def _prepare_env(kwargs: dict[str, Any]) -> dict[str, str]:

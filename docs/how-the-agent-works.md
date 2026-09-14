@@ -12,7 +12,7 @@ A LangGraph **supervisor** that routes to **portfolio** and **research** special
 | Specialists | LangChain `create_agent` subgraphs in `agents/portfolio_sub_agent` and `agents/research_sub_agent` |
 | Tool loading | Shared **langchain-mcp-adapters** client when `TOOL_MODE=mcp`; each sub-agent selects its allowlist. Other modes use `python_tools/` or `skills/` |
 | Model | **Gemini** (`gemini-3.1-flash-lite`, via API key) |
-| Tool sources | **apira-mcp** (`login`, `get_portfolio`) + **apira-rag** (`searchLocalFolder`, `searchVectorDB`). `searchVectorDB` is MCP-only; other modes use a local `searchLocalFolder`. |
+| Tool sources | **apira-mcp** (`login`, `get_portfolio`) + **apira-rag** (`searchLocalFolder`, `searchVectorDB`). `searchVectorDB` is on RAG MCP (`TOOL_MODE=mcp` or skills + `SKILLS_MCP=true`); other modes use a local `searchLocalFolder`. |
 
 The agent is a client of both MCP servers, in its own repo separate from [apira](https://github.com/KMeltzer24/apira), [apira-mcp](https://github.com/KMeltzer24/apira-mcp), and [apira-rag](https://github.com/KMeltzer24/apira-rag).
 
@@ -20,14 +20,14 @@ The agent is a client of both MCP servers, in its own repo separate from [apira]
 
 ## Tool modes (`TOOL_MODE`)
 
-Specialists load **one** packaging at a time. Portfolio tool names stay identical across modes. Research: `searchLocalFolder` exists in every mode; `searchVectorDB` only in `mcp`.
+Specialists load **one** packaging at a time. Portfolio tool names stay identical across modes. Research: `searchLocalFolder` exists in every mode; `searchVectorDB` in `mcp`, and in skills modes when `SKILLS_MCP=true`.
 
 | Mode | Portfolio / research packaging |
 |------|--------------------------------|
 | `mcp` (default) | MCP allowlists under each agent’s `mcp_tools/` |
 | `python` | LangChain `@tool` under `python_tools/` (portfolio → REST; `searchLocalFolder` → local files) |
-| `skills_prompt` | `skills/<tool>.md` → Gemini generates python/bash → run (real tools) |
-| `skills_shell` | `skills/<tool>_shell.md` same codegen path; sample bash is a hint |
+| `skills_prompt` | `skills/<tool>.md` → Gemini generates python/bash → run. With `SKILLS_MCP=true`, research uses `*_MCP.md` (RAG MCP, including `searchVectorDB`) |
+| `skills_shell` | `skills/<tool>_shell.md` same codegen path; sample bash is a hint. With `SKILLS_MCP=true`, research uses `*_shell_MCP.md` (`curl` JSON-RPC to RAG MCP) |
 
 Skill files are named after the **tool**, not the agent (`login.md` / `login_shell.md`, not `research.md` / `research_shell.md`).
 
@@ -68,7 +68,7 @@ pip install -r requirements.txt
 cp .env.example .env              # set GOOGLE_API_KEY (aistudio.google.com/apikey)
 ```
 
-Config lives in `.env`: `TOOL_MODE`, `MCP_URL`, `RAG_MCP_URL` (both must end in `/mcp`), `USER_SERVICE_URL`, `PORTFOLIO_SERVICE_URL`, `STOCK_RESEARCH_DIR`, `LLM_MODEL`, and `GOOGLE_API_KEY`. Full stack: [apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md).
+Config lives in `.env`: `TOOL_MODE`, `SKILLS_MCP`, `MCP_URL`, `RAG_MCP_URL` (both must end in `/mcp`), `USER_SERVICE_URL`, `PORTFOLIO_SERVICE_URL`, `STOCK_RESEARCH_DIR`, `LLM_MODEL`, and `GOOGLE_API_KEY`. Full stack: [apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md).
 
 ---
 

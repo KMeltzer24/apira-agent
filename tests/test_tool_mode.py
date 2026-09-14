@@ -10,6 +10,7 @@ from agents.tool_mode import (
     TOOL_MODE_SKILLS_PROMPT,
     TOOL_MODE_SKILLS_SHELL,
     get_tool_mode,
+    skills_mcp_enabled,
 )
 
 
@@ -30,6 +31,29 @@ class ToolModeTests(unittest.TestCase):
     def test_rejects_unknown(self) -> None:
         with self.assertRaises(ValueError):
             get_tool_mode("crewai")
+
+    def test_skills_mcp_only_in_skills_modes(self) -> None:
+        import os
+        from unittest.mock import patch
+
+        with patch.dict(os.environ, {"TOOL_MODE": TOOL_MODE_MCP, "SKILLS_MCP": "true"}):
+            self.assertFalse(skills_mcp_enabled())
+        with patch.dict(
+            os.environ, {"TOOL_MODE": TOOL_MODE_PYTHON, "SKILLS_MCP": "true"}
+        ):
+            self.assertFalse(skills_mcp_enabled())
+        with patch.dict(
+            os.environ, {"TOOL_MODE": TOOL_MODE_SKILLS_PROMPT, "SKILLS_MCP": "true"}
+        ):
+            self.assertTrue(skills_mcp_enabled())
+        with patch.dict(
+            os.environ, {"TOOL_MODE": TOOL_MODE_SKILLS_SHELL, "SKILLS_MCP": "false"}
+        ):
+            self.assertFalse(skills_mcp_enabled())
+        with patch.dict(
+            os.environ, {"TOOL_MODE": TOOL_MODE_SKILLS_SHELL, "SKILLS_MCP": "true"}
+        ):
+            self.assertTrue(skills_mcp_enabled())
 
 
 if __name__ == "__main__":

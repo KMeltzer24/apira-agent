@@ -43,8 +43,8 @@ Tool **names stay the same** across packaging modes. Set `TOOL_MODE` to switch h
 |-------------|----------------------|
 | `mcp` (default) | Remote MCP tools via allowlists under `mcp_tools/` |
 | `python` | In-process LangChain `@tool`s under `python_tools/` (portfolio → REST; `searchLocalFolder` → local files) |
-| `skills_prompt` | NL `skills/<tool>.md` → Gemini generates python/bash → execute (real tools) |
-| `skills_shell` | `skills/<tool>_shell.md` same codegen path; sample bash is a hint (`searchLocalFolder` local; no `searchVectorDB`) |
+| `skills_prompt` | NL `skills/<tool>.md` → Gemini generates python/bash → execute (real tools). With `SKILLS_MCP=true`, research uses `*_MCP.md` and calls RAG MCP directly (includes `searchVectorDB`) |
+| `skills_shell` | `skills/<tool>_shell.md` same codegen path; sample bash is a hint. With `SKILLS_MCP=true`, research uses `*_shell_MCP.md` (folder + vector via MCP) |
 
 Agent Chat and Stock Recommender both `POST /chat`; the supervisor decides which specialist(s) to run. Login and the FastAPI services stay tools, not agents.
 
@@ -75,7 +75,7 @@ The graph loads tools from a shared MCP client; each sub-agent keeps its own all
 
 ## Unit tests
 
-Specialists can be tested **without** the supervisor, Gemini, or live MCP. Each package has `test_agent.py` that calls `build_agent` directly and stubs the LLM plus MCP client. `TOOL_MODE` is switched through `python`, `mcp`, and both skill modes.
+Specialists can be tested **without** the supervisor, Gemini, or live MCP. Each package has `test_agent.py` that calls `build_agent` directly and stubs the LLM plus MCP client. `TOOL_MODE` is switched through `python`, `mcp`, and both skill modes (including `SKILLS_MCP` for research `*_MCP.md`).
 
 ```bash
 python -m unittest agents.portfolio_sub_agent.test_agent
@@ -110,6 +110,7 @@ Four cases: supervisor chat, alice portfolio (share counts), local-folder recomm
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `TOOL_MODE` | `mcp` | Tool packaging: `mcp`, `python`, `skills_prompt`, or `skills_shell` |
+| `SKILLS_MCP` | `false` | When `TOOL_MODE` is `skills_prompt` or `skills_shell`, research skills call RAG MCP from `*_MCP.md` files |
 | `MCP_URL` | `http://host.docker.internal:8000/mcp` | Apira MCP endpoint |
 | `RAG_MCP_URL` | `http://host.docker.internal:8200/mcp` | Apira RAG MCP endpoint |
 | `USER_SERVICE_URL` | `http://host.docker.internal:8001` | user-service REST (python / skills_shell) |
@@ -163,5 +164,5 @@ curl -X POST http://localhost:8100/chat -H "Content-Type: application/json" \
 ## Notes
 
 - `agent.py` runs a one-shot prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each chat request.
-- The agent never calls the backend APIs directly **in `TOOL_MODE=mcp`** — it uses MCP tools. With `TOOL_MODE=python`, portfolio `@tool`s call user/portfolio REST and `searchLocalFolder` uses `python_tools/local_folder_search.py`. With `skills_prompt` / `skills_shell`, the same tool names run via Gemini codegen from skill markdown. `searchVectorDB` is only available in `TOOL_MODE=mcp`.
+- The agent never calls the backend APIs directly **in `TOOL_MODE=mcp`** — it uses MCP tools. With `TOOL_MODE=python`, portfolio `@tool`s call user/portfolio REST and `searchLocalFolder` uses `python_tools/local_folder_search.py`. With `skills_prompt` / `skills_shell`, the same tool names run via Gemini codegen from skill markdown. `searchVectorDB` is available in `TOOL_MODE=mcp`, and in skills modes when `SKILLS_MCP=true` (generated code calls RAG MCP; it does not use `mcp_tools/` or `python_tools`).
 - No authentication on the MCP endpoint or the agent API (learning project). Keep `GOOGLE_API_KEY` in `.env` (gitignored), never in git.

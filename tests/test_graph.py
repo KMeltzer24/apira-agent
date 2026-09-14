@@ -146,6 +146,17 @@ class GraphCompileTests(unittest.TestCase):
             self.assertIn("portfolio", graph.nodes)
             self.assertEqual(client.get_tools_calls, 0, msg=mode)
 
+    def test_skills_mcp_still_skips_client_get_tools(self) -> None:
+        model = FakeListChatModel(responses=["ok"])
+        client = _FakeMcpClient(_demo_tools())
+        with patch.dict(
+            os.environ,
+            {"TOOL_MODE": TOOL_MODE_SKILLS_PROMPT, "SKILLS_MCP": "true"},
+        ):
+            graph = asyncio.run(compile_supervisor_graph(model, client))
+        self.assertIn("research", graph.nodes)
+        self.assertEqual(client.get_tools_calls, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,7 @@ services:
       - PORTFOLIO_SERVICE_URL=${PORTFOLIO_SERVICE_URL:-http://host.docker.internal:8002}
       - STOCK_RESEARCH_DIR=${STOCK_RESEARCH_DIR:-/data/stock-research}
       - TOOL_MODE=${TOOL_MODE:-mcp}
+      - SKILLS_MCP=${SKILLS_MCP:-false}
       - LLM_MODEL=${LLM_MODEL:-gemini-3.1-flash-lite}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}

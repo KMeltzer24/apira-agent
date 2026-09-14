@@ -107,9 +107,17 @@ class ResearchSubAgentTests(unittest.TestCase):
     def test_skills_modes_build(self) -> None:
         for mode in (TOOL_MODE_SKILLS_PROMPT, TOOL_MODE_SKILLS_SHELL):
             model = _BindableFake(responses=[_RESEARCH_REPLY])
-            with patch.dict(os.environ, {"TOOL_MODE": mode}):
+            with patch.dict(os.environ, {"TOOL_MODE": mode, "SKILLS_MCP": "false"}):
                 node = asyncio.run(build_agent(model, client=None))
             result = _invoke(node, "Research AAPL with searchLocalFolder.")
+            self.assertTrue(result["messages"], msg=mode)
+
+    def test_skills_mcp_mode_builds_with_both_search_tools(self) -> None:
+        for mode in (TOOL_MODE_SKILLS_PROMPT, TOOL_MODE_SKILLS_SHELL):
+            model = _BindableFake(responses=[_RESEARCH_REPLY])
+            with patch.dict(os.environ, {"TOOL_MODE": mode, "SKILLS_MCP": "true"}):
+                node = asyncio.run(build_agent(model, client=None))
+            result = _invoke(node, "Research AAPL with searchVectorDB.")
             self.assertTrue(result["messages"], msg=mode)
 
     def test_unsupported_mode_raises(self) -> None:
