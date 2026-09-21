@@ -6,6 +6,8 @@ Built with **LangChain**, **LangGraph**, and **langchain-mcp-adapters**. Run it 
 
 **Full write-up:** [docs/how-the-agent-works.md](docs/how-the-agent-works.md) — what we built, how it works, and how to test it.
 
+**Last rec after login:** [docs/get-previous-recommendation.md](docs/get-previous-recommendation.md) — why `getPreviousRecommendation` is bound only on the logged-in supervisor.
+
 **Tool use scenarios:** [docs/tool-use-scenarios.md](docs/tool-use-scenarios.md) — `TOOL_MODE` (MCP, Python `@tool`, skills prompt, skills shell).
 
 **Stock Recommender:** [apira-rag/docs/how-stock-recommender-works.md](https://github.com/KMeltzer24/apira-rag/blob/main/docs/how-stock-recommender-works.md).
