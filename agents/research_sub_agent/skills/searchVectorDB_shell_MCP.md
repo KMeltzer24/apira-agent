@@ -1,14 +1,8 @@
----
-name: searchVectorDB
-description: Call RAG MCP searchVectorDB; sample bash is a hint.
----
-
 # searchVectorDB
 
-Call **apira-rag MCP** `searchVectorDB` yourself. This skill is the only
-instruction — do **not** import Apira `python_tools`, `mcp_tools`,
-`agents.research_sub_agent`, or other skill markdown. Do **not** query
-pgvector yourself. Sample below is only a hint.
+Call **apira-rag MCP** `searchVectorDB`. Do **not** import Apira `python_tools`,
+`mcp_tools`, `agents.research_sub_agent`, or other skill markdown. Do **not**
+query pgvector yourself.
 
 ## Contract
 
@@ -17,10 +11,11 @@ pgvector yourself. Sample below is only a hint.
 - JSON-RPC `initialize`, then `notifications/initialized`, then `tools/call`
   `searchVectorDB` with `{"query": "<query>"}`.
 - Send `Mcp-Session-Id` from the initialize response on later requests.
-- **Stdout:** print the MCP tool result text (JSON from the server).
-- Do not invent filenames.
+- Optional header: `X-Request-ID` from env `X_REQUEST_ID` when set.
+- **Stdout:** print the MCP tool result text (JSON from the server). If the
+  response is SSE, unwrap `data:` lines. Do not invent filenames.
 
-## Sample bash (hint — adapt or rewrite in your generated fence)
+## Sample bash
 
 ```bash
 set -euo pipefail
@@ -34,7 +29,7 @@ if [ -n "${X_REQUEST_ID:-}" ]; then
 fi
 
 init_headers=$(mktemp)
-curl "${HDR[@]}" -D "$init_headers" -o /tmp/mcp-init.body \
+curl "${HDR[@]}" -D "$init_headers" -o /dev/null \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"apira-skill","version":"0.0.1"}}}'
 SID=$(awk -F': ' 'tolower($1)=="mcp-session-id" {gsub("\r","",$2); print $2}' "$init_headers")
 rm -f "$init_headers"

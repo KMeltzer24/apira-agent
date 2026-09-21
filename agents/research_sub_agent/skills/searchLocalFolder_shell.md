@@ -1,29 +1,26 @@
----
-name: searchLocalFolder
-description: Search on-disk stock-research files; sample bash is a hint.
----
-
 # searchLocalFolder
 
-Search the local stock-research corpus on disk (not vector search).
-Implement the search in the code you generate — do **not** call Apira
-Python modules, MCP tools, or other packaging modes. Sample bash below is only a hint.
+Search the local stock-research corpus on disk (not vector search, not MCP).
+Do **not** import Apira `python_tools`, `mcp_tools`, or other skill files.
 
 ## Contract
 
-- **Args:** `query`.
-- **Folder:** `${STOCK_RESEARCH_DIR}`.
-- Recursively search `.txt` / `.md` (including `extracted/`); case-insensitive match on name or contents.
+- **Args:** `query`. Empty / `*` / `all` means match broadly.
+- **Folder:** `${STOCK_RESEARCH_DIR}` (default `/data/stock-research`).
+- Recursively search `.txt` / `.md` (including `extracted/`).
+- Skip `README.md` and AppleDouble `._*` files.
+- Case-insensitive match on filename or contents.
+- Cap large file bodies (~32KB each) and stop after a reasonable total size (~96KB).
 - **Stdout:** JSON with `query`, `folder`, `file_count`, and `files`
   (`filename`, `relative_path`, `content`).
-- Do not invent filenames.
+- Cite only real files from this search. Do not invent filenames or file text.
 
-## Sample bash (hint — adapt or rewrite in your generated fence)
+## Sample bash
 
 ```bash
 set -euo pipefail
-ROOT="${STOCK_RESEARCH_DIR:-/data/stock-research}"
-Q="${query:-}"
+export STOCK_RESEARCH_DIR="${STOCK_RESEARCH_DIR:-/data/stock-research}"
+export query="${query:-}"
 python3 - <<'PY'
 import json, os, pathlib
 root = pathlib.Path(os.environ["STOCK_RESEARCH_DIR"]).resolve()
@@ -58,6 +55,3 @@ print(json.dumps({
 }))
 PY
 ```
-
-Note: the sample uses a one-shot `python3` heredoc for JSON convenience. That is
-**inline generated-style code**, not `agents.research_sub_agent` or `python_tools`.

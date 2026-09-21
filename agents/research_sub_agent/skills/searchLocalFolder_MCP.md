@@ -1,14 +1,8 @@
----
-name: searchLocalFolder
-description: Call the RAG MCP searchLocalFolder tool over HTTP.
----
-
 # searchLocalFolder
 
-Call **apira-rag MCP** `searchLocalFolder` yourself. This skill is the only
-instruction — do **not** import Apira `python_tools`, `mcp_tools`,
-`agents.research_sub_agent`, or other skill markdown. Do **not** walk
-`${STOCK_RESEARCH_DIR}` on disk.
+Call **apira-rag MCP** `searchLocalFolder`. Do **not** import Apira
+`python_tools`, `mcp_tools`, `agents.research_sub_agent`, or other skill
+markdown. Do **not** walk `${STOCK_RESEARCH_DIR}` on disk.
 
 ## Contract
 
@@ -20,5 +14,6 @@ instruction — do **not** import Apira `python_tools`, `mcp_tools`,
 - The official `mcp` Python client (`streamablehttp_client` + `ClientSession`)
   is fine; raw JSON-RPC is also fine. Do not use LangChain MCP adapters or
   this repo's tool loaders.
-- **Stdout:** print the tool result text (JSON from the server).
-- Cite only files returned by MCP; do not invent filenames.
+- **Stdout:** print only the tool result text (JSON from the server), not
+  initialize chatter. If the transport uses SSE, unwrap `data:` JSON.
+- Cite only files returned by MCP. Do not invent filenames or file text.

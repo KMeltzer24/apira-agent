@@ -1,23 +1,21 @@
----
-name: getPreviousRecommendation
-description: Fetch last recommendation via generated code; sample bash is a hint.
----
-
 # getPreviousRecommendation
 
-Fetch the single most recent recommendation stored for this user.
+Read the last stored recommendation for this user. Do not invent one. Do not
+run research, login, or save a new recommendation.
 
 ## Contract
 
-- **Args:** `user_id` from a prior login.
-- **Endpoint:** `GET ${PORTFOLIO_SERVICE_URL}/recommendation?user_id=<user_id>`.
+- **Args:** `user_id` (numeric).
+- **Endpoint:** `GET ${PORTFOLIO_SERVICE_URL}/recommendation?user_id=<user_id>`
 - Optional header: `X-Request-ID` from env `X_REQUEST_ID` when set.
-- **Stdout:** print the raw JSON response.
+- **Stdout:** print the raw JSON (`user_id`, `body`). `body` is JSON `null` when
+  none is stored.
+- On HTTP error, print the error body and exit non-zero.
 
-## Sample bash (hint — adapt or rewrite in your generated fence)
+## Sample bash
 
 ```bash
-curl_args=(-sS -G "${PORTFOLIO_SERVICE_URL}/recommendation")
+curl_args=(-sS -f -G "${PORTFOLIO_SERVICE_URL}/recommendation")
 if [ -n "${X_REQUEST_ID:-}" ]; then
   curl_args+=(-H "X-Request-ID: ${X_REQUEST_ID}")
 fi

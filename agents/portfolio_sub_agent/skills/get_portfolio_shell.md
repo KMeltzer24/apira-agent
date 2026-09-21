@@ -1,23 +1,20 @@
----
-name: get_portfolio
-description: Fetch holdings via generated code; sample bash is a hint.
----
-
 # get_portfolio
 
-Fetch holdings from the portfolio-service REST API.
+Call the portfolio-service REST API. Do not invent holdings. Do not search
+research files or recommend trades.
 
 ## Contract
 
-- **Args:** `user_id` from a prior login.
-- **Endpoint:** `GET ${PORTFOLIO_SERVICE_URL}/portfolio?user_id=<user_id>`.
+- **Args:** `user_id` (numeric).
+- **Endpoint:** `GET ${PORTFOLIO_SERVICE_URL}/portfolio?user_id=<user_id>`
 - Optional header: `X-Request-ID` from env `X_REQUEST_ID` when set.
-- **Stdout:** print the raw JSON response.
+- **Stdout:** print the raw JSON (`holdings` list with ticker / company / shares).
+- On HTTP error, print the error body and exit non-zero. Do not fake holdings.
 
-## Sample bash (hint — adapt or rewrite in your generated fence)
+## Sample bash
 
 ```bash
-curl_args=(-sS -G "${PORTFOLIO_SERVICE_URL}/portfolio")
+curl_args=(-sS -f -G "${PORTFOLIO_SERVICE_URL}/portfolio")
 if [ -n "${X_REQUEST_ID:-}" ]; then
   curl_args+=(-H "X-Request-ID: ${X_REQUEST_ID}")
 fi
