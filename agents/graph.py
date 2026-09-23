@@ -1,4 +1,4 @@
-"""Parent StateGraph: sequential supervisor → portfolio → logged_in → research."""
+"""Parent StateGraph: sequential supervisor → portfolio → logged_in → research → save."""
 
 from __future__ import annotations
 

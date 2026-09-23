@@ -30,7 +30,6 @@ from logging_config import (
     set_user_id,
 )
 
-# Comma-separated list of allowed browser origins for the frontend.
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-"""Supervisor save hop after research (GET is a logged-in supervisor tool)."""
+"""Supervisor graph hop that persists the last research reply."""
 
 from __future__ import annotations
 

@@ -37,18 +37,15 @@ load_dotenv()
 configure_logging()
 logger = logging.getLogger(__name__)
 
-# Always set via .env / docker-compose. This fallback matches the in-container
-# default (the agent reaches MCP via the host-published port).
+# In-container default: MCP on the host-published port, not localhost inside Docker.
 MCP_URL = os.environ.get("MCP_URL", "http://host.docker.internal:8000/mcp")
 RAG_MCP_URL = os.environ.get(
     "RAG_MCP_URL", "http://host.docker.internal:8200/mcp"
 )
 
-# Gemini model that drives the agent (needs GOOGLE_API_KEY in the environment).
 GEMINI_MODEL = os.environ.get("LLM_MODEL", "gemini-3.1-flash-lite")
 
-# Default prompt used by the one-shot CLI demo. The agent must work out that it
-# needs to call `login` to get a user_id, then `get_portfolio`.
+# CLI demo: login then holdings, without naming tools in the prompt.
 DEFAULT_PROMPT = (
     "Log in as user 'alice' with password 'password', then retrieve that "
     "user's portfolio and summarize the holdings."
@@ -125,7 +122,7 @@ def _safe_tool_result_fields(tool_name: str, result: MCPToolCallResult) -> dict:
                 if isinstance(item, dict)
             ],
         }
-        # get_portfolio args already have user_id; include it when present on payload.
+        # login JSON includes user_id; get_portfolio args already had it.
         if payload.get("user_id") is not None:
             fields["user_id"] = payload["user_id"]
         return fields
