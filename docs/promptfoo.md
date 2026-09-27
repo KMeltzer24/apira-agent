@@ -61,8 +61,9 @@ promptfooconfig.yaml
 HTTP POST http://localhost:8100/chat
   body: { "message": "<test prompt>" }
   ▼
-apira-agent (LangGraph)
-  supervisor → portfolio → logged_in → research → save_recommendation → logged_in → final reply
+apira-agent supervisor (:8100 LangGraph)
+  discovers portfolio + research via Nacos A2A
+  supervisor → A2A portfolio → logged_in → A2A research → save_recommendation → logged_in → final reply
   ▼
 Promptfoo reads json.reply
   ▼
@@ -71,9 +72,9 @@ Assertions (contains AAPL, Hold/Add/Trim, no Traceback, …)
 ```
 
 1. **Same API as the UI** — Agent Chat and Recommender also `POST /chat`.
-2. **One provider** — `http` → `localhost:8100`. The full graph runs inside that request.
+2. **One provider** — `http` → `localhost:8100` (supervisor). Specialists run in other containers; Promptfoo still only sees the final `reply`.
 3. **Final reply only** — Promptfoo does not observe which node ran; path coverage comes from the prompt design and reply content.
-4. **Live stack required** — Postgres, user/portfolio services, MCP, RAG, agent, and a valid `GOOGLE_API_KEY` must be up ([run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md)).
+4. **Live stack required** — Postgres, user/portfolio services, MCP, RAG, Nacos + three agent containers, and a valid `GOOGLE_API_KEY` must be up ([run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md)).
 
 ---
 
@@ -134,7 +135,7 @@ Use `REQUEST_TIMEOUT_MS=180000` because recommender paths can exceed one minute.
 ## Demo talking points
 
 1. Promptfoo lives in **apira-agent** next to `agents/` / `promptfooconfig.yaml`.
-2. Evals hit the same `/chat` endpoint as the frontend.
+2. Evals hit the same `/chat` endpoint as the frontend (supervisor `:8100`; specialists are other containers).
 3. Four tests cover chat, portfolio tools, local-folder research, and vector-DB research.
 4. `promptfoo eval` (or `promptfoo view`) shows pass/fail for the suite.
 5. Scoring is end-to-end on the final reply, not per LangGraph node.
@@ -147,7 +148,7 @@ Use `REQUEST_TIMEOUT_MS=180000` because recommender paths can exceed one minute.
 |------------|--------|
 | No per-node scoring | Does not assert routing decisions; only checks final text |
 | Variable LLM output | Asserts use loose matching (`icontains` / keyword checks), not exact strings |
-| Needs live services | No offline Gemini mock; stack outages look like eval failures |
+| Needs live services | No offline Gemini mock; stack outages look like eval failures. After changing `GOOGLE_API_KEY` in apira-agent `.env`, recreate the three agent containers |
 | Slow | Recommender path can take 1–3 minutes; concurrency is 1 |
 | Vector DB needs ingest | Test 4 fails if `research_chunks` is empty |
 | Manual runs | No CI workflow required for this project |

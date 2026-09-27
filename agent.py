@@ -1,7 +1,8 @@
-"""Apira agent — LangGraph supervisor + specialists over MCP tools.
+"""Apira agent — LangGraph supervisor + A2A specialists over MCP tools.
 
-It connects to apira-mcp for backend tools and apira-rag for research tools,
-then runs a user prompt through a supervisor graph (Gemini).
+It connects to apira-mcp for backend tools and apira-rag for research tools
+(on the specialist containers), then runs a user prompt through a supervisor
+graph (Gemini). Portfolio and research are discovered via Nacos / A2A.
 
 Run directly (`python agent.py`) for a one-shot demo with a hard-coded prompt,
 or import `build_agent` / `run_agent` to serve it (see server.py).
@@ -199,6 +200,31 @@ async def mcp_tool_logging_interceptor(
     return result
 
 
+async def create_mcp_client_and_model():
+    """Shared Gemini model + MCP client for supervisor and A2A specialists."""
+    client = MultiServerMCPClient(
+        {
+            "apira": {
+                "url": MCP_URL,
+                "transport": "streamable_http",
+                "httpx_client_factory": request_id_httpx_client_factory,
+            },
+            "research": {
+                "url": RAG_MCP_URL,
+                "transport": "streamable_http",
+                "httpx_client_factory": request_id_httpx_client_factory,
+            },
+        },
+        tool_interceptors=[mcp_tool_logging_interceptor],
+    )
+    # max_retries=0 so a 429 (quota) fails fast instead of honoring Gemini's
+    # multi-second retry delay and hanging the request.
+    model = ChatGoogleGenerativeAI(
+        model=GEMINI_MODEL, temperature=0, max_retries=0
+    )
+    return model, client
+
+
 async def build_agent():
     """Load MCP tools and build a LangGraph agent backed by Gemini."""
     started = time.perf_counter()
@@ -210,26 +236,7 @@ async def build_agent():
         model=GEMINI_MODEL,
     )
     try:
-        client = MultiServerMCPClient(
-            {
-                "apira": {
-                    "url": MCP_URL,
-                    "transport": "streamable_http",
-                    "httpx_client_factory": request_id_httpx_client_factory,
-                },
-                "research": {
-                    "url": RAG_MCP_URL,
-                    "transport": "streamable_http",
-                    "httpx_client_factory": request_id_httpx_client_factory,
-                },
-            },
-            tool_interceptors=[mcp_tool_logging_interceptor],
-        )
-        # max_retries=0 so a 429 (quota) fails fast instead of honoring Gemini's
-        # multi-second retry delay and hanging the request.
-        model = ChatGoogleGenerativeAI(
-            model=GEMINI_MODEL, temperature=0, max_retries=0
-        )
+        model, client = await create_mcp_client_and_model()
         agent = await compile_supervisor_graph(model, client)
     except Exception as exc:
         log_event(

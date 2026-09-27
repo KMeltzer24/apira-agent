@@ -6,10 +6,10 @@ In this repo the tool is named **`getPreviousRecommendation`** (singular). Enfor
 
 ## How it is enforced
 
-The graph compiles **two** supervisor hops.
+The graph compiles **two** supervisor hops. Both run **inside the supervisor container**. Portfolio is a **separate A2A container**; `logged_in` is not.
 
 ```
-START → supervisor (guest) → portfolio → logged_in → …
+START → supervisor (guest) → portfolio (A2A) → logged_in → …
 ```
 
 **Guest** (`logged_in=False`) is built with **no tools**:

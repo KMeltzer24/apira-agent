@@ -1,6 +1,6 @@
 # How the Apira Agent Works
 
-A LangGraph **supervisor** that routes **sequentially** through **portfolio**, then a **logged_in** hop, then **research** when needed. Specialists call Apira MCP tools; the LLM is Google Gemini. Agent Chat is the supervisor, not a third specialist.
+A LangGraph **supervisor** that routes **sequentially** through **portfolio**, then a **logged_in** hop, then **research** when needed. Portfolio and research each run in their own Docker container, register with Nacos over AgentScope A2A, and are discovered by the supervisor. Specialists call Apira MCP tools; the LLM is Google Gemini. Agent Chat is the supervisor, not a third specialist.
 
 ---
 
@@ -8,13 +8,14 @@ A LangGraph **supervisor** that routes **sequentially** through **portfolio**, t
 
 | Piece | Choice |
 |-------|--------|
-| Orchestration | **LangGraph** `StateGraph` (`START` → `supervisor` → `portfolio` → `logged_in` → `research` → `save_recommendation` → `logged_in` → `END`) |
-| Specialists | LangChain `create_agent` subgraphs in `agents/portfolio_sub_agent` and `agents/research_sub_agent` |
+| Orchestration | **LangGraph** `StateGraph` (`START` → `supervisor` → `portfolio` → `logged_in` → `research` → `save_recommendation` → `logged_in` → `END`). Portfolio/research hops are A2A calls, not in-process subgraphs. |
+| Specialists | LangChain `create_agent` in `agents/portfolio_sub_agent` and `agents/research_sub_agent`, each served by AgentScope `AgentApp` in its own container |
+| Discovery | Sub-agents register Agent Cards with **Nacos 3.1**; supervisor uses `NacosAgentCardResolver` then a2a-sdk `ClientFactory` (not AgentScope `A2AAgent`) |
 | Tool loading | Shared **langchain-mcp-adapters** client when `TOOL_MODE=mcp`; each sub-agent selects its allowlist. Other modes use `python_tools/` or `skills/` |
 | Model | **Gemini** (`gemini-3.1-flash-lite`, via API key) |
 | Tool sources | **apira-mcp** (`login`, `get_portfolio`, `getPreviousRecommendation`, `saveRecommendation`) + **apira-rag** (`searchLocalFolder`, `searchVectorDB`). Last recommendation lives in Apira Postgres (`recommendations`). `searchVectorDB` is on RAG MCP (`TOOL_MODE=mcp` or skills + `SKILLS_MCP=true`); other modes use a local `searchLocalFolder`. |
 
-The agent is a client of both MCP servers, in its own repo separate from [apira](https://github.com/KMeltzer24/apira), [apira-mcp](https://github.com/KMeltzer24/apira-mcp), and [apira-rag](https://github.com/KMeltzer24/apira-rag).
+**A2A three-container split:** [a2a-containers.md](a2a-containers.md) (`docker-compose.yml` in this repo).
 
 ---
 
@@ -42,16 +43,31 @@ agent.py / server.py (prompt)
   ▼
 LangGraph StateGraph + Gemini (sequential specialists; POST /chat is HTTP only)
   ├── supervisor — chat, or route to portfolio only (no tools)
-  ├── portfolio → apira-mcp (:8000/mcp) → backend APIs (:8001 / :8002) → Postgres
+  ├── portfolio (A2A container :8110) → apira-mcp (:8000/mcp) → backend APIs
   ├── logged_in — post-portfolio: `getPreviousRecommendation` tool, or route to research
   ├── save_recommendation — supervisor upsert after research (not an LLM tool)
-  └── research → apira-rag (:8200/mcp)
-      ├── stock-research/ files (searchLocalFolder)
-      └── research_chunks in Postgres (searchVectorDB / pgvector)
+  └── research (A2A container :8120) → apira-rag (:8200/mcp)
 ```
 
-1. Connect to both MCP servers with one shared client when `TOOL_MODE=mcp`. Each sub-agent loads only its tools via `mcp_tools/` (`login` / `get_portfolio` for portfolio; `searchLocalFolder` / `searchVectorDB` for research). For other modes, specialists load `python_tools/` or `skills/` instead (see **Tool modes** above).
-2. Compile a parent graph in `agents/graph.py`. The first supervisor’s structured output is `portfolio` | `finish` (no tools). After portfolio, the logged-in supervisor binds `getPreviousRecommendation` and may choose `research` | `finish` | `portfolio`. Last rec is that tool, not a graph destination. See [get-previous-recommendation.md](get-previous-recommendation.md).
+On startup, **portfolio** and **research** register themselves with Nacos (`:8848`). The supervisor discovers those Agent Cards (Nacos first, then `/.well-known/agent-card.json` as fallback) and calls the specialists over A2A. Guest routing is unchanged: research is unreachable until portfolio has run.
+
+## Three containers (one repo)
+
+All of this is still the **apira-agent** codebase. `docker compose up` starts **three agent processes** plus Nacos:
+
+| Compose service | Port | What it is |
+|-----------------|------|------------|
+| `supervisor` | `8100` | Frontend `POST /chat`. Guest hop, logged-in hop, `save_recommendation`. Discovers and **calls** the other two. |
+| `portfolio` | `8110` | Sub-agent. **Registers** itself, then runs login/holdings. |
+| `research` | `8120` | Sub-agent. **Registers** itself, then runs search tools. |
+| `nacos` | `8848` | A2A registry (not an agent). |
+
+Same Docker image; `AGENT_ROLE` picks the process. The UI never talks to `:8110` or `:8120`.
+
+### How a request runs
+
+1. Each specialist container connects to MCP when `TOOL_MODE=mcp` and loads only its allowlist (`login` / `get_portfolio` for portfolio; `searchLocalFolder` / `searchVectorDB` for research). The supervisor container loads `getPreviousRecommendation` for the logged-in hop. For other modes, specialists load `python_tools/` or `skills/` instead (see **Tool modes** above).
+2. Compile a parent graph in `agents/graph.py`. Portfolio and research nodes are A2A clients. The first supervisor’s structured output is `portfolio` | `finish` (no tools). After portfolio, the logged-in supervisor binds `getPreviousRecommendation` and may choose `research` | `finish` | `portfolio`. Last rec is that tool, not a graph destination. See [get-previous-recommendation.md](get-previous-recommendation.md).
 3. Run the hard-coded prompt in `agent.py` ("log in as alice, then summarize the portfolio"): supervisor → portfolio → logged_in → END.
 4. For recommendations: supervisor → portfolio → logged_in → research → save_recommendation → logged_in → END. The save hop upserts `recommendations`; research only searches. Asking for the last rec later: logged_in calls `getPreviousRecommendation`. The first hop cannot skip to research; `enforce_guest_routing` sends research/last-rec asks to portfolio first. After holdings, if the user still asked for search/Hold-Add-Trim and no research tool has run, `enforce_research_routing` forces `research` next. `POST /chat` always enters this graph; it does not call MCP tools itself.
 
@@ -87,7 +103,7 @@ They omit prompts, replies, tool argument values, credentials, and API keys. Fol
 
 ```bash
 cd ~/apira-agent
-docker compose logs -f agent
+docker compose logs -f supervisor
 ```
 
 Use the same request ID in the MCP, RAG, and backend container logs to trace one
@@ -114,10 +130,10 @@ There are two live entry points: a hardcoded one-shot prompt, and the custom-pro
 
 ### Hardcoded prompt (the assignment demo)
 
-`agent.py` runs the hardcoded `DEFAULT_PROMPT` ("log in as alice, then summarize the portfolio"). Run it inside the container so it inherits `MCP_URL` and `GOOGLE_API_KEY`:
+`agent.py` runs the hardcoded `DEFAULT_PROMPT` ("log in as alice, then summarize the portfolio"). Run it inside the supervisor container so it inherits `MCP_URL` and `GOOGLE_API_KEY`:
 
 ```bash
-docker compose exec agent python agent.py
+docker compose exec supervisor python agent.py
 ```
 
 Expected (the exact wording varies — it's an LLM):
@@ -156,7 +172,8 @@ For the Recommender path, see [apira-rag/docs/how-stock-recommender-works.md](ht
 | `Stock research folder not found` | Host path leaked into the container as `STOCK_RESEARCH_DIR` | Set `STOCK_RESEARCH_DIR=/data/stock-research` for Docker |
 | `skill bash exited 127: curl: command not found` | Old image without curl | Rebuild agent image (`docker compose up -d --build`); Dockerfile installs curl for `skills_shell` |
 | Recommender answers Hold with `Files: N/A` / “no research access” | Logged-in supervisor finished after portfolio without research | Ensure current agent build (guest cannot skip portfolio; `enforce_research_routing` after login); logs should show `logged_in` then `routed to research` then `searchLocalFolder` / `searchVectorDB` |
-| `DefaultCredentialsError` / 401 / 403 from Gemini | Missing or invalid `GOOGLE_API_KEY` | Set a valid key from aistudio.google.com/apikey |
+| `DefaultCredentialsError` / 401 / 403 from Gemini | Missing, stale container env, or project denied for `LLM_MODEL` | Put a valid key in **apira-agent `.env`** (RAG has its own for embeddings). Recreate containers: `docker compose up -d --force-recreate supervisor portfolio research` |
+| JSON-RPC `-32603` Internal error | Supervisor reached portfolio; specialist reply failed A2A encoding | See [a2a-containers.md](a2a-containers.md); rebuild current `a2a_server.py` |
 | Gemini `503` high demand / quota exhausted | Temporary capacity or project quota | Retry later, switch `LLM_MODEL`, or raise quota / use a new key |
 | `zsh: bad pattern: #` | Inline `#` comment after a command | Run the command alone, no trailing comment |
 | Timeout reaching the server | Agent/MCP not running | Start local stack; `curl http://localhost:8100/health` |
@@ -171,7 +188,7 @@ For the Recommender path, see [apira-rag/docs/how-stock-recommender-works.md](ht
 docker compose up -d --build
 ```
 
-Runs on port **8100**. The **Agent Chat** and **Recommender** pages in [apira-frontend](https://github.com/KMeltzer24/apira-frontend) call this endpoint. The agent server stays in this repo (backend); the UI stays in the frontend (client) — same split as the rest of the project.
+That starts Nacos plus **supervisor** (`:8100`), **portfolio** (`:8110`), and **research** (`:8120`). The **Agent Chat** and **Recommender** pages still call only `POST /chat` on `:8100`. The UI stays in the frontend; the three agent processes stay in this repo.
 
 ---
 
@@ -195,6 +212,6 @@ promptfoo view
 
 ## Notes
 
-- Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-google-genai 4.2.5, fastapi 0.138.0.
-- Parent graph wiring lives in `agents/graph.py`; specialists and supervisor are separate packages under `agents/`. Root `agent.py` builds the Gemini/MCP client and imports that graph; `server.py` exposes `POST /chat`.
+- Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-google-genai 4.2.5, fastapi 0.138.0, agentscope 2.0.8, agentscope-runtime 1.1.6.post2, a2a-sdk 0.3.26.
+- Parent graph wiring lives in `agents/graph.py`; specialists and supervisor are separate packages under `agents/`. Root `agent.py` builds the Gemini/MCP client and imports that graph; `server.py` exposes `POST /chat` on the **supervisor** container. Portfolio and research are A2A servers (`a2a_server.py`) that register with Nacos.
 - `agent.py` uses a default prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each request.

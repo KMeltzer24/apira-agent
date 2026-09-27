@@ -23,7 +23,7 @@ Tool **names** stay stable where a tool exists (`login`, `get_portfolio`, `searc
 
 ## How to switch
 
-Set in `.env` or pass into compose, then recreate the agent:
+Set in `.env` or pass into compose, then recreate **all three** agent containers (they share `TOOL_MODE`):
 
 ```bash
 TOOL_MODE=mcp docker compose up -d --force-recreate

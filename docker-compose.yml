@@ -1,27 +1,117 @@
+x-agent-env: &agent-env
+  MCP_URL: ${MCP_URL:-http://host.docker.internal:8000/mcp}
+  RAG_MCP_URL: ${RAG_MCP_URL:-http://host.docker.internal:8200/mcp}
+  USER_SERVICE_URL: ${USER_SERVICE_URL:-http://host.docker.internal:8001}
+  PORTFOLIO_SERVICE_URL: ${PORTFOLIO_SERVICE_URL:-http://host.docker.internal:8002}
+  STOCK_RESEARCH_DIR: ${STOCK_RESEARCH_DIR:-/data/stock-research}
+  TOOL_MODE: ${TOOL_MODE:-mcp}
+  SKILLS_MCP: ${SKILLS_MCP:-false}
+  LLM_MODEL: ${LLM_MODEL:-gemini-3.1-flash-lite}
+  GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+  CORS_ORIGINS: ${CORS_ORIGINS:-*}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  NACOS_SERVER_ADDR: nacos:8848
+  A2A_REGISTRY_ENABLED: "true"
+  A2A_REGISTRY_TYPE: nacos
+  PORTFOLIO_A2A_BASE_URL: http://portfolio:8110
+  RESEARCH_A2A_BASE_URL: http://research:8120
+  A2A_TASK_TIMEOUT: "180"
+
 services:
-  agent:
+  nacos:
+    image: nacos/nacos-server:v3.1.0
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    environment:
+      MODE: standalone
+      PREFER_HOST_MODE: hostname
+      NACOS_AUTH_ENABLE: "false"
+      # Nacos 3.1 still requires these even with auth disabled.
+      NACOS_AUTH_TOKEN: VGhpc0lzTXlDdXN0b21TZWNyZXRLZXkwMTIzNDU2Nzg=
+      NACOS_AUTH_IDENTITY_KEY: serverIdentity
+      NACOS_AUTH_IDENTITY_VALUE: security
+      JVM_XMS: 256m
+      JVM_XMX: 256m
+      JVM_XMN: 128m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8848/nacos/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    restart: unless-stopped
+
+  supervisor:
     build: .
     ports:
       - "8100:8100"
     environment:
-      # Backend and research MCP servers on the host (host.docker.internal).
-      - MCP_URL=${MCP_URL:-http://host.docker.internal:8000/mcp}
-      - RAG_MCP_URL=${RAG_MCP_URL:-http://host.docker.internal:8200/mcp}
-      - USER_SERVICE_URL=${USER_SERVICE_URL:-http://host.docker.internal:8001}
-      - PORTFOLIO_SERVICE_URL=${PORTFOLIO_SERVICE_URL:-http://host.docker.internal:8002}
-      - STOCK_RESEARCH_DIR=${STOCK_RESEARCH_DIR:-/data/stock-research}
-      - TOOL_MODE=${TOOL_MODE:-mcp}
-      - SKILLS_MCP=${SKILLS_MCP:-false}
-      - LLM_MODEL=${LLM_MODEL:-gemini-3.1-flash-lite}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LOG_FORMAT=${LOG_FORMAT:-json}
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - SERVICE_NAME=${SERVICE_NAME:-apira-agent}
+      <<: *agent-env
+      AGENT_ROLE: supervisor
+      PORT: "8100"
+      SERVICE_NAME: apira-supervisor
     volumes:
-      # Same corpus apira-rag uses; needed for python / skills_shell searchLocalFolder.
       - ${STOCK_RESEARCH_HOST_PATH:-../apira-rag/stock-research}:/data/stock-research:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      nacos:
+        condition: service_healthy
+      portfolio:
+        condition: service_healthy
+      research:
+        condition: service_healthy
+    restart: unless-stopped
+
+  portfolio:
+    build: .
+    ports:
+      - "8110:8110"
+    environment:
+      <<: *agent-env
+      AGENT_ROLE: portfolio
+      PORT: "8110"
+      A2A_HOST: portfolio
+      SERVICE_NAME: apira-portfolio
+    volumes:
+      - ${STOCK_RESEARCH_HOST_PATH:-../apira-rag/stock-research}:/data/stock-research:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      nacos:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8110/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  research:
+    build: .
+    ports:
+      - "8120:8120"
+    environment:
+      <<: *agent-env
+      AGENT_ROLE: research
+      PORT: "8120"
+      A2A_HOST: research
+      SERVICE_NAME: apira-research
+    volumes:
+      - ${STOCK_RESEARCH_HOST_PATH:-../apira-rag/stock-research}:/data/stock-research:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      nacos:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8120/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     restart: unless-stopped

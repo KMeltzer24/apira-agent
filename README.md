@@ -2,9 +2,9 @@
 
 A Python agent that uses [apira-mcp](https://github.com/KMeltzer24/apira-mcp) for backend tools and [apira-rag](https://github.com/KMeltzer24/apira-rag) for stock-research tools — driven by **Google Gemini**.
 
-Built with **LangChain**, **LangGraph**, and **langchain-mcp-adapters**. Run it in Docker on your **Mac** ([apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md)). Agent Chat and Recommender call `POST /chat` on port 8100.
+Built with **LangChain**, **LangGraph**, **AgentScope A2A**, and **langchain-mcp-adapters**. Run it in Docker on your **Mac** ([apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md)). Agent Chat and Recommender call `POST /chat` on the supervisor at port 8100. Portfolio and research run in their own containers and register with Nacos.
 
-**Full write-up:** [docs/how-the-agent-works.md](docs/how-the-agent-works.md) — what we built, how it works, and how to test it.
+**A2A split (three containers):** [docs/a2a-containers.md](docs/a2a-containers.md) — what changed, and how [docker-compose.yml](docker-compose.yml) starts supervisor, portfolio, and research.
 
 **Last rec after login:** [docs/get-previous-recommendation.md](docs/get-previous-recommendation.md) — why `getPreviousRecommendation` is bound only on the logged-in supervisor.
 
@@ -33,15 +33,15 @@ Apira uses **both**:
 START → supervisor → portfolio → logged_in → research → save_recommendation → logged_in → END
 ```
 
-The first supervisor cannot route to research and has no tools. Portfolio sets `logged_in` and `user_id`. Only the logged-in supervisor binds `getPreviousRecommendation`. After research, `save_recommendation` upserts the row (not a tool). Logged-in may return to portfolio (refresh), but the prompt tells it not to while holdings are static.
+The first supervisor cannot route to research and has no tools. Portfolio and research are remote A2A specialists; the graph nodes call them after Nacos discovery. Portfolio sets `logged_in` and `user_id`. Only the logged-in supervisor binds `getPreviousRecommendation`. After research, `save_recommendation` upserts the row (not a tool). Logged-in may return to portfolio (refresh), but the prompt tells it not to while holdings are static.
 
 | Node | Role | MCP tools |
 |------|------|-----------|
-| **supervisor** | Pre-login: answer chat or send to portfolio | none (`agents/supervisor/`) |
-| **portfolio** | Login and holdings; marks the session logged in | `login`, `get_portfolio` (`agents/portfolio_sub_agent/mcp_tools/`) |
-| **logged_in** | Post-portfolio supervisor: route to research/finish, or call `getPreviousRecommendation` | `getPreviousRecommendation` only |
+| **supervisor** | Pre-login: answer chat or send to portfolio | none (`agents/supervisor/`); container `:8100` |
+| **portfolio** | Login and holdings; marks the session logged in | `login`, `get_portfolio`; A2A container `:8110` |
+| **logged_in** | Post-portfolio supervisor: route to research/finish, or call `getPreviousRecommendation` | `getPreviousRecommendation` only (same supervisor container) |
 | **save_recommendation** | After research: upsert last rec | supervisor (`PUT /recommendation`; MCP `saveRecommendation` is the same API) |
-| **research** | Citations and Hold/Add/Trim | `searchLocalFolder`, `searchVectorDB` (`agents/research_sub_agent/mcp_tools/`) |
+| **research** | Citations and Hold/Add/Trim | `searchLocalFolder`, `searchVectorDB`; A2A container `:8120` |
 
 Tool **names stay the same** across packaging modes. Set `TOOL_MODE` to switch how specialists load them:
 
@@ -60,19 +60,19 @@ Agent Chat and Stock Recommender both `POST /chat`. The first supervisor can onl
 agent.py / server.py (prompt)
   ▼
 LangGraph StateGraph + Gemini
-  │  sequential: supervisor → portfolio → logged_in → research
+  │  sequential: supervisor → A2A portfolio → logged_in → A2A research
   ▼
-├── portfolio → apira-mcp (:8000/mcp)
+├── portfolio container → apira-mcp (:8000/mcp)
 │   ├── login → user-service
 │   └── get_portfolio → portfolio-service
 ├── logged_in → getPreviousRecommendation (after login only)
 │   └── saveRecommendation is a graph hop after research, not an LLM tool
-└── research → apira-rag (:8200/mcp)  (only after logged_in)
+└── research container → apira-rag (:8200/mcp)  (only after logged_in)
     ├── searchLocalFolder → stock-research/
     └── searchVectorDB → Postgres pgvector (research_chunks)
 ```
 
-The graph loads tools from a shared MCP client; each sub-agent keeps its own allowlist under `mcp_tools/` (`portfolio_sub_agent`, `research_sub_agent`). The first supervisor answers or sends to portfolio; research is unlocked only after that specialist returns. Specialists do not share tools with each other in the codebase.
+The supervisor graph no longer imports specialist packages. Each sub-agent loads its own MCP allowlist in its container (`mcp_tools/` under `portfolio_sub_agent` / `research_sub_agent`). The first supervisor answers or sends to portfolio; research is unlocked only after that specialist returns.
 
 `server.py` wraps the compiled graph in a FastAPI service (built lazily on the first request, so the server boots instantly):
 
@@ -125,7 +125,8 @@ Four cases: supervisor chat, alice portfolio (share counts), local-folder recomm
 | `PORTFOLIO_SERVICE_URL` | `http://host.docker.internal:8002` | portfolio-service REST (python / skills_shell) |
 | `STOCK_RESEARCH_DIR` | `/data/stock-research` | Local research corpus (python / skills_shell `searchLocalFolder`) |
 | `LLM_MODEL` | `gemini-3.1-flash-lite` | Gemini model |
-| `GOOGLE_API_KEY` | — | Gemini API key (required) |
+| `GOOGLE_API_KEY` | — | Gemini API key (required). This repo’s `.env` only; recreate agent containers after changing it |
+| `NACOS_SERVER_ADDR` | `nacos:8848` | Nacos A2A registry (set by compose) |
 | `CORS_ORIGINS` | `*` | Browser origins allowed to call the API |
 | `LOG_LEVEL` | `INFO` | Minimum structured-log level |
 | `LOG_FORMAT` | `json` | `json` for container logs or `text` for local debugging |
@@ -141,8 +142,8 @@ including safe metadata such as durations and argument names. Prompts, replies,
 tool argument values, passwords, and keys are not logged.
 
 ```bash
-docker compose logs -f agent
-docker compose logs --since=10m agent | grep '<request-id>'
+docker compose logs -f supervisor
+docker compose logs --since=10m supervisor | grep '<request-id>'
 ```
 
 ## Local development
@@ -161,7 +162,7 @@ One-shot CLI demo:
 python agent.py
 ```
 
-Or run the API in Docker:
+Or run the stack in Docker (Nacos + supervisor + portfolio + research):
 
 ```bash
 docker compose up -d --build
