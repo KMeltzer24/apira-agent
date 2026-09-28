@@ -1,200 +1,195 @@
 # A2A agent containers
 
-This is the write-up of splitting Apira’s agent into **three Docker containers** that find each other with **AgentScope A2A**.
-
-Yes: [docker-compose.yml](../docker-compose.yml) in **this repo** (`apira-agent`) defines all three agent containers. It also starts **Nacos**, which is a registry, not a fourth agent.
+Apira’s conversational agent runs as three Docker processes that locate one another through the Agent-to-Agent (A2A) protocol and a Nacos registry. [docker-compose.yml](../docker-compose.yml) in this repository defines those three agent services (`supervisor`, `portfolio`, `research`) and Nacos. Nacos is a directory, not a fourth agent.
 
 ```bash
 cd ~/development/apira-agent
 docker compose up -d --build
 ```
 
----
+Sequential guest / portfolio / logged-in / research behavior: [how-the-agent-works.md](how-the-agent-works.md).
 
-## What changed
-
-**Before:** one compose service named `agent` on port `8100`. Supervisor, portfolio, and research were Python packages in the **same process**. The supervisor imported specialist code and ran it as LangGraph nodes.
-
-**After:** still one git repo and one Docker image. Three processes, each with `AGENT_ROLE`:
-
-| Compose service | `AGENT_ROLE` | Port | Job |
-|-----------------|--------------|------|-----|
-| `supervisor` | `supervisor` | `8100` | Frontend `POST /chat`. Discovers specialists, then **calls** them. Guest hop, logged-in hop, save last rec. |
-| `portfolio` | `portfolio` | `8110` | Sub-agent. **Registers** itself. Login + holdings (MCP tools). |
-| `research` | `research` | `8120` | Sub-agent. **Registers** itself. Stock search (RAG MCP tools). |
-| `nacos` | — | `8848` | Directory of Agent Cards. Not an agent. |
-
-The website still only uses `http://localhost:8100`. It never talks to `:8110` or `:8120`.
-
-```
-Browser / Promptfoo
-        │
-        ▼
-  supervisor :8100          (LangGraph)
-        │  1. look up names in Nacos
-        │  2. call specialists over A2A
-        ▼
-  portfolio :8110     research :8120
-        │                    │
-        ▼                    ▼
-   apira-mcp :8000      apira-rag :8200
-```
+Supervisor, portfolio, and research are **separate agents**: separate processes, separate images, separate MCP tool trees, **no Python imports** between them. They do not share a process or a tool list. Specialists **register** when they start. The supervisor **does not** scan Nacos at boot. On the first graph hop that needs `portfolio` or `research`, it looks that name up in Nacos (Agent Card), then A2A `POST /a2a` to the URL **on that card**. Nacos is not a message bus; specialists never call each other.
 
 ---
 
-## Why A2A and Nacos
+## Purpose
 
-**A2A** (agent-to-agent) is HTTP so one agent can call another by **name and URL**, instead of `import`ing Python.
+The design goal is a **catalog of existing agents** plus **runtime location**, rather than a single process that imports specialist packages.
 
-**AgentScope Runtime** serves each specialist (`AgentApp` in `a2a_server.py`). **a2a-sdk 0.3** is the HTTP protocol (pinned because Runtime requires `<1.0`). AgentScope 2.x’s `A2AAgent` helper expects a2a-sdk 1.x (`TransportProtocol` on `a2a.utils.constants`), so the supervisor does **not** use it. It uses `ClientFactory` instead (`agents/a2a/client.py`), with `TransportProtocol` from `a2a.types`.
+| Requirement | Mechanism |
+|-------------|-----------|
+| List what agents exist | Nacos A2A registry (Agent Cards by name) |
+| Self-register | Portfolio and research publish card metadata and a Docker-network `/a2a` URL when their process starts |
+| Discover | First time the graph needs `portfolio` or `research`, the supervisor looks that **name** up in Nacos (not at supervisor boot; not via well-known HTTP) |
+| Call | Using the URL on the card, the supervisor sends graph state to `POST /a2a` (a2a-sdk `ClientFactory`, JSON-RPC) |
 
-1. Each sub-agent starts `a2a_server.py` (AgentScope `AgentApp`).
-2. It publishes an Agent Card (`/.well-known/agent-card.json`).
-3. It **registers** that card + host/port with Nacos.
-4. The supervisor **discovers** `portfolio` and `research` from Nacos (if Nacos is slow, it falls back to the well-known URL on the Docker network).
-5. It calls them with a2a-sdk `ClientFactory` (JSON-RPC, non-streaming).
-
-LangGraph routing did **not** change:
-
-```
-START → supervisor → portfolio → logged_in → research → save_recommendation → logged_in → END
-```
-
-Guest still cannot skip to research. `logged_in` and `save_recommendation` stay **inside the supervisor container**. They are hops, not extra Docker services.
+Clients (frontend, curl, Promptfoo) call only the supervisor: `POST /chat` on host port `8100`. Specialist HTTP is **not published** to the Mac. The graph still uses the known names `portfolio` and `research`; Nacos answers **where** they are. A new specialist needs a new container that registers and a new node in [agents/graph.py](../agents/graph.py).
 
 ---
 
-## What is in `docker-compose.yml`
+## Agent separation
 
-Four `services:` blocks:
+Each agent is its own process with its own MCP connections. Compose **builds three images** so a container does not contain another agent’s package or tool tree.
 
-- `nacos` — `nacos/nacos-server:v3.1.0`
-- `supervisor` — `build: .`, `AGENT_ROLE: supervisor`, `8100:8100`
-- `portfolio` — same image, `AGENT_ROLE: portfolio`, `8110:8110`
-- `research` — same image, `AGENT_ROLE: research`, `8120:8120`
+| Isolation | How it is enforced |
+|-----------|--------------------|
+| Tools not visible to other agents | Each process builds an MCP client with only its servers: supervisor and portfolio → `apira`; research → `research`. Allowlists under each package still filter tool names. Supervisor image does not contain `portfolio_sub_agent` / `research_sub_agent`. |
+| Agents not visible outside the registry | Compose does not map `8110`/`8120` to localhost. Discovery does not use well-known HTTP fallback or hardcoded specialist URLs. The host catalog is Nacos (`:8848`). After a card is fetched, A2A still uses the Docker-network URL stored on that card. |
 
-`docker-entrypoint.sh` reads `AGENT_ROLE`: supervisor runs `server.py`; portfolio/research run `a2a_server.py`.
-
-MCP, RAG, Postgres, and the frontend are **not** in this file. They still start from their own repos.
+Packages live under `agents/portfolio_sub_agent/`, `agents/research_sub_agent/`, and `agents/supervisor/`. Dockerfile targets `supervisor`, `portfolio`, and `research` strip the other packs. Finding agents at runtime is a **registry** problem.
 
 ---
 
-## How to verify (maps to the A2A requirements)
+## Process topology
 
-Nothing on `:8100` / `:8110` / `:8120` until this stack is up. MCP, RAG, Postgres, and a `GOOGLE_API_KEY` in **this repo’s `.env`** are required for a real chat; the container/register checks only need apira-agent compose. Gemini keys live only in **apira-agent** and **apira-rag** (backend/MCP/frontend do not). Compose interpolates `.env` at container create — after changing the key, recreate: `docker compose up -d --force-recreate supervisor portfolio research`.
+Previously a single compose service `agent` on `:8100` ran supervisor, portfolio, and research in one Python process. The parent graph imported each specialist’s `build_agent`.
 
-```bash
-cd ~/development/apira-agent
-docker compose up -d --build
-docker compose ps
+| Compose service | `AGENT_ROLE` | Host port | Docker port | Nacos | Responsibility |
+|-----------------|--------------|-----------|-------------|-------|----------------|
+| `supervisor` | `supervisor` | `8100` | `8100` | Does not register (caller) | FastAPI [`server.py`](../server.py); guest supervisor, logged-in supervisor, `save_recommendation` |
+| `portfolio` | `portfolio` | none | `8110` | Registers | Login and holdings specialist |
+| `research` | `research` | none | `8120` | Registers | Local-folder and vector research specialist |
+| `nacos` | — | `8848` (HTTP), `9848` (gRPC) | same | — | Agent Card and endpoint directory |
+
+Nacos’s A2A registry stores **Agent Cards and `/a2a` endpoints**. Portfolio and research run AgentScope `AgentApp` and therefore register. The supervisor runs FastAPI [`server.py`](../server.py) (`POST /chat`). It is the HTTP entry point and A2A **client**, not an A2A server, so it has no card or `/a2a` path to publish.
+
+All three agent services share the YAML anchor `x-agent-env` (MCP URLs, `TOOL_MODE`, Gemini, `NACOS_SERVER_ADDR=nacos:8848`, `A2A_REGISTRY_ENABLED=true`, `A2A_REGISTRY_TYPE=nacos`). Specialists set `A2A_HOST` to their compose service name so the **registered** URL is reachable on the Docker network (`http://portfolio:8110/a2a`, `http://research:8120/a2a`), not from the host.
+
+```
+HTTP client
+    POST /chat → supervisor :8100 (published)
+                      │
+                      │  LangGraph: START → supervisor → portfolio → logged_in
+                      │             → research → save_recommendation → logged_in → END
+                      │
+         discover name ──► Nacos :8848 (published)
+                      │
+                      │  A2A JSON-RPC POST /a2a (Docker network only)
+                      ▼
+            portfolio :8110              research :8120
+            (AgentApp + Nacos register)  (AgentApp + Nacos register)
+                      │                            │
+                      ▼                            ▼
+                 apira-mcp :8000              apira-rag :8200
 ```
 
-You should see **four** services: `nacos`, `supervisor`, `portfolio`, `research` — not a single `agent` container.
+`logged_in` and `save_recommendation` run inside the supervisor process. They are not compose services and do not register with Nacos.
 
-### 1. Three agents in separate containers
-
-```bash
-docker compose ps --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}'
-curl -s http://localhost:8100/health   # supervisor
-curl -s http://localhost:8110/health   # portfolio
-curl -s http://localhost:8120/health   # research
-```
-
-Three different published ports means three processes. Confirm they are not the same container:
-
-```bash
-docker compose exec supervisor printenv AGENT_ROLE   # supervisor
-docker compose exec portfolio printenv AGENT_ROLE    # portfolio
-docker compose exec research printenv AGENT_ROLE     # research
-```
-
-### 2. Each sub-agent registers itself (AgentScope A2A)
-
-Agent Cards (A2A well-known path):
-
-```bash
-curl -s http://localhost:8110/.well-known/agent-card.json | python3 -m json.tool
-curl -s http://localhost:8120/.well-known/agent-card.json | python3 -m json.tool
-```
-
-Expect `"name": "portfolio"` and `"name": "research"`, plus a `url` pointing at that service.
-
-Registration logs (Nacos):
-
-```bash
-docker compose logs portfolio | grep -E 'A2A|NacosRegistry|register'
-docker compose logs research | grep -E 'A2A|NacosRegistry|register'
-```
-
-Look for Agent Card published / endpoint registered. Nacos console: [http://localhost:8848/nacos](http://localhost:8848/nacos) (standalone).
-
-### 3. Supervisor discovers, then calls
-
-Unit tests (no Docker; discovery/call is mocked):
-
-```bash
-cd ~/development/apira-agent
-source .venv/bin/activate
-python -m unittest tests.test_a2a tests.test_graph -q
-```
-
-Live discover + call (needs Gemini + MCP/RAG for a full answer):
-
-```bash
-# Watch all three while you chat
-docker compose logs -f supervisor portfolio research
-```
-
-In another terminal:
-
-```bash
-curl -s -X POST http://localhost:8100/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Log in as alice (password: password) and show my portfolio"}'
-```
-
-In **supervisor** logs, look for:
-
-- `a2a.discover.completed` with `agent_name=portfolio` (Nacos or well-known)
-- `a2a.call.completed` / `portfolio specialist started` then `completed`
-
-In **portfolio** logs, the same request should show `http.request` / `agent.run` — that proves the supervisor **called** the other container, not in-process Python.
-
-For research as well, use a Recommender-style prompt (local folder) or Promptfoo:
-
-```bash
-curl -s http://localhost:8100/health
-REQUEST_TIMEOUT_MS=180000 promptfoo eval
-```
-
-A passing alice/recommender case means supervisor → portfolio A2A → logged_in → research A2A.
-
-### What would mean it is *not* working
-
-| Symptom | Meaning |
-|---------|---------|
-| Only one compose service (`agent`) | Old compose; rebuild from current `docker-compose.yml` |
-| `:8110` / `:8120` fail health | Specialists never started |
-| No Agent Card JSON | A2A server did not come up |
-| Supervisor chat works but **no** lines in `portfolio` / `research` logs | Still in-process (wrong image/graph) |
-| `Could not discover A2A agent` | Nacos/register failed and well-known fallback failed |
-| `cannot import name 'TransportProtocol'` | Old image still using AgentScope `A2AAgent`; rebuild current `agents/a2a/client.py` |
-| JSON-RPC `-32603` / `UnboundLocalError: 'message'` | Specialist finished; AgentScope stream adapter needs a non-`None` `AIMessage.id` (`a2a_server.py` yields `id="{role}-result"`) |
-| Gemini `403 PERMISSION_DENIED` | Key/project cannot use `LLM_MODEL`. Put a new key in `.env`, then `--force-recreate` the three agent containers |
+MCP, RAG, Postgres, and the frontend are started from their own repositories, not this compose file.
 
 ---
 
-## Code map
+## Layers: A2A, AgentScope, Nacos
+
+| Layer | Role |
+|-------|------|
+| **A2A** | HTTP contract: Agent Card (identity, skills, URL) and JSON-RPC tasks on `/a2a` |
+| **AgentScope Runtime** | Hosts each specialist as `AgentApp` ([`agents/a2a/specialist_app.py`](../agents/a2a/specialist_app.py) plus per-agent `a2a_main.py`) and, when env enables it, registers with Nacos |
+| **Nacos 3.1** | Registry. Console: [http://localhost:8848/nacos](http://localhost:8848/nacos) |
+
+---
+
+## Underlying structure
+
+### Images and entrypoint
+
+Three image targets in [`Dockerfile`](../Dockerfile); [`docker-entrypoint.sh`](../docker-entrypoint.sh) branches on `AGENT_ROLE`:
+
+- `supervisor` → `uvicorn server:app` ([`server.py`](../server.py))
+- `portfolio` → `python -m agents.portfolio_sub_agent.a2a_main`
+- `research` → `python -m agents.research_sub_agent.a2a_main`
+
+Supervisor `depends_on` healthy Nacos, portfolio, and research so specialists can register before the first chat.
+
+### Specialist server
+
+Each `a2a_main` constructs AgentScope `AgentApp` with `AgentCardWithRuntimeConfig`: name, description, Docker-network `url`, and A2A **skills** (portfolio: `login`, `get_portfolio`; research: `searchLocalFolder`, `searchVectorDB`). `A2A_REGISTRY_*` and `NACOS_SERVER_ADDR` cause AgentScope’s `NacosRegistry` to:
+
+1. **Release (publish) the Agent Card** — identity and skills in Nacos.
+2. **Register the endpoint** — address, port, path `/a2a`, JSON-RPC transport.
+
+Registration runs at **process startup**, not on the first user message. AgentScope keeps the Nacos client open for **heartbeat**. Shutdown calls `cleanup()` and closes that connection.
+
+AgentScope may still serve `/.well-known/agent-card.json` **inside** the specialist container. That URL is not published to the host and is not used for supervisor discovery.
+
+`@app.query(framework="langgraph")` is the A2A request handler: it decodes the inbound text as graph state, runs that pack’s LangChain specialist, and yields one assistant message containing the encoded result.
+
+### Parent graph (supervisor process)
+
+[`agents/graph.py`](../agents/graph.py) still compiles a `StateGraph`. Portfolio and research nodes are **not** in-process subgraphs. They are [`build_remote_specialist_node`](../agents/a2a/nodes.py) wrappers that call [`call_specialist`](../agents/a2a/client.py). The supervisor MCP client is created with `mcp_servers=["apira"]` only ([`agents/llm_mcp.py`](../agents/llm_mcp.py)).
+
+### Discover
+
+The supervisor does **not** load the catalog when `server.py` starts. [`agents/a2a/discover.py`](../agents/a2a/discover.py) runs when LangGraph first hits a remote node (`call_specialist` → `_agent_card`). Then:
+
+1. Ask Nacos for the Agent Card named `portfolio` or `research` (`NacosAIService.get_agent_card`).
+2. Retry until Nacos has it or attempts are exhausted (no well-known HTTP fallback).
+3. Keep that card in memory for later hops in the same supervisor process.
+
+Compose `depends_on` healthy specialists so they can **register before that first hop**. Booting the supervisor alone does not discover anyone.
+
+### Call
+
+[`agents/a2a/client.py`](../agents/a2a/client.py) builds an a2a-sdk client from the card, sends a user text message, and reads the completed task text. [`agents/a2a/payload.py`](../agents/a2a/payload.py) prefixes JSON with `APIRA_STATE_V1:` so `messages`, `logged_in`, `user_id`, and `request_id` survive a text-only A2A hop.
+
+### Tests
+
+[`tests/test_a2a.py`](../tests/test_a2a.py) covers payload round-trip, remote nodes with a mocked `call_specialist`, and Nacos-only discovery (no Docker). [`tests/test_llm_mcp.py`](../tests/test_llm_mcp.py) checks each process only lists its MCP servers.
 
 | Path | Role |
 |------|------|
-| [docker-compose.yml](../docker-compose.yml) | The three agent containers + Nacos |
-| [docker-entrypoint.sh](../docker-entrypoint.sh) | Picks supervisor vs specialist process |
-| [a2a_server.py](../a2a_server.py) | Specialist A2A server + self-register |
-| [agents/a2a/](../agents/a2a/) | Discover, call, GraphState payload |
-| [agents/graph.py](../agents/graph.py) | Portfolio/research nodes are A2A clients |
-| [server.py](../server.py) | Supervisor `POST /chat` |
+| [docker-compose.yml](../docker-compose.yml) | Four services; per-target images; `AGENT_ROLE`; specialists not published |
+| [Dockerfile](../Dockerfile) | `supervisor` / `portfolio` / `research` stages; entrypoint |
+| [docker-entrypoint.sh](../docker-entrypoint.sh) | Process selection |
+| [server.py](../server.py) | Supervisor HTTP API (`POST /chat`) |
+| [agent.py](../agent.py) | Supervisor graph build; MCP servers `apira` only |
+| [logging_config.py](../logging_config.py) | Structured logs and `X-Request-ID` |
+| [agents/llm_mcp.py](../agents/llm_mcp.py) | Gemini + per-process MCP server list |
+| [agents/graph.py](../agents/graph.py) | Sequential graph; remote specialist nodes |
+| [agents/state.py](../agents/state.py) | Shared graph state |
+| [agents/tool_mode.py](../agents/tool_mode.py) | `TOOL_MODE` / `SKILLS_MCP` |
+| [agents/a2a/specialist_app.py](../agents/a2a/specialist_app.py) | Shared AgentApp factory, card, query handler |
+| [agents/a2a/discover.py](../agents/a2a/discover.py) | Nacos-only card lookup |
+| [agents/a2a/client.py](../agents/a2a/client.py) | A2A JSON-RPC client |
+| [agents/a2a/nodes.py](../agents/a2a/nodes.py) | LangGraph node → `call_specialist` |
+| [agents/a2a/payload.py](../agents/a2a/payload.py) | `APIRA_STATE_V1` envelope |
+| [agents/portfolio_sub_agent/a2a_main.py](../agents/portfolio_sub_agent/a2a_main.py) | Portfolio A2A process + Nacos register |
+| [agents/portfolio_sub_agent/agent.py](../agents/portfolio_sub_agent/agent.py) | Portfolio specialist graph |
+| [agents/portfolio_sub_agent/mcp_tools/](../agents/portfolio_sub_agent/mcp_tools/) | `login`, `get_portfolio` allowlist |
+| [agents/research_sub_agent/a2a_main.py](../agents/research_sub_agent/a2a_main.py) | Research A2A process + Nacos register |
+| [agents/research_sub_agent/agent.py](../agents/research_sub_agent/agent.py) | Research specialist graph |
+| [agents/research_sub_agent/mcp_tools/](../agents/research_sub_agent/mcp_tools/) | `searchLocalFolder`, `searchVectorDB` allowlist |
+| [agents/supervisor/agent.py](../agents/supervisor/agent.py) | Guest and logged-in supervisor hops |
+| [agents/supervisor/save_recommendation.py](../agents/supervisor/save_recommendation.py) | Save hop (supervisor process, not Nacos) |
+| [agents/supervisor/mcp_tools/](../agents/supervisor/mcp_tools/) | `getPreviousRecommendation` allowlist |
+| [tests/test_a2a.py](../tests/test_a2a.py) | Payload, remote nodes, Nacos-only discover |
+| [tests/test_llm_mcp.py](../tests/test_llm_mcp.py) | MCP server isolation |
 
-Product behavior (tools, Gemini, guest-before-research) is unchanged. Only **where** specialists run changed.
+---
 
-Full agent narrative: [how-the-agent-works.md](how-the-agent-works.md).
+## Registration lifetime
+
+Portfolio and research register **when that process starts** (`docker compose up`), not on the first chat. Typical logs:
+
+```text
+[NacosRegistry] Agent card published: agent=portfolio
+[NacosRegistry] Agent endpoint registered: agent=portfolio, address=portfolio:8110, path=/a2a
+```
+
+That is two Nacos writes: the **card** (name, skills, advertised URL) and the **endpoint** (host, port, `/a2a`, JSON-RPC). AgentScope then **keeps the Nacos client open** so heartbeats continue. Idle time (no `/chat`) does **not** unregister them. They stay in the live directory for as long as the container is running.
+
+They are **not** permanently “on” after the first register. Live presence is tied to the process:
+
+| Situation | In the live registry? | Supervisor can call? |
+|-----------|----------------------|----------------------|
+| Specialist never started | No | No |
+| Specialist running (even with no traffic) | Yes — card + endpoint, heartbeats | Yes |
+| Specialist stopped (`docker compose stop`, crash, kill) | Heartbeats stop. Nacos treats that **endpoint instance** as gone or unhealthy. Apira has no “registered but inactive” shelf | No |
+| Specialist started again | Registers again (same two steps) | Yes |
+
+Graceful shutdown runs AgentScope `cleanup()`, which **closes the Nacos connection**. That stops heartbeats; we do not keep an offline roster. A hard kill skips `cleanup()`; Nacos still drops the instance after missed heartbeats.
+
+Nacos can stay up with specialists down. The console may still show leftover **card** metadata; that is not a live agent. Discover needs a current card/endpoint the supervisor can dial. Until the specialist registers again, lookup fails.
+
+The supervisor **never** registers. Catalog surfaces: compose process list, Nacos console (`http://localhost:8848/nacos`), supervisor logs `a2a.discover.*` (source `nacos`). There is no running / not-running split in the product UI.

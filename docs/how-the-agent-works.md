@@ -43,26 +43,26 @@ agent.py / server.py (prompt)
   ▼
 LangGraph StateGraph + Gemini (sequential specialists; POST /chat is HTTP only)
   ├── supervisor — chat, or route to portfolio only (no tools)
-  ├── portfolio (A2A container :8110) → apira-mcp (:8000/mcp) → backend APIs
+  ├── portfolio (A2A, Docker network only) → apira-mcp (:8000/mcp) → backend APIs
   ├── logged_in — post-portfolio: `getPreviousRecommendation` tool, or route to research
   ├── save_recommendation — supervisor upsert after research (not an LLM tool)
-  └── research (A2A container :8120) → apira-rag (:8200/mcp)
+  └── research (A2A, Docker network only) → apira-rag (:8200/mcp)
 ```
 
-On startup, **portfolio** and **research** register themselves with Nacos (`:8848`). The supervisor discovers those Agent Cards (Nacos first, then `/.well-known/agent-card.json` as fallback) and calls the specialists over A2A. Guest routing is unchanged: research is unreachable until portfolio has run.
+On startup, **portfolio** and **research** register themselves with Nacos (`:8848`). The supervisor does not look them up at boot. When a chat routes to a specialist, it loads that Agent Card **from Nacos only** and calls `/a2a` on the Docker network. Guest routing is unchanged: research is unreachable until portfolio has run.
 
-## Three containers (one repo)
+## Three separate agents
 
-All of this is still the **apira-agent** codebase. `docker compose up` starts **three agent processes** plus Nacos:
+`docker compose up` starts **three agent processes** plus Nacos. Compose builds a **separate image per agent** so another agent’s tools are not on that disk.
 
-| Compose service | Port | What it is |
-|-----------------|------|------------|
+| Compose service | Host port | What it is |
+|-----------------|-----------|------------|
 | `supervisor` | `8100` | Frontend `POST /chat`. Guest hop, logged-in hop, `save_recommendation`. Discovers and **calls** the other two. |
-| `portfolio` | `8110` | Sub-agent. **Registers** itself, then runs login/holdings. |
-| `research` | `8120` | Sub-agent. **Registers** itself, then runs search tools. |
+| `portfolio` | none | Sub-agent. **Registers** itself, then runs login/holdings. |
+| `research` | none | Sub-agent. **Registers** itself, then runs search tools. |
 | `nacos` | `8848` | A2A registry (not an agent). |
 
-Same Docker image; `AGENT_ROLE` picks the process. The UI never talks to `:8110` or `:8120`.
+Three Docker images; `AGENT_ROLE` picks which process starts. The UI never talks to specialist HTTP; those ports are not published.
 
 ### How a request runs
 
@@ -173,7 +173,7 @@ For the Recommender path, see [apira-rag/docs/how-stock-recommender-works.md](ht
 | `skill bash exited 127: curl: command not found` | Old image without curl | Rebuild agent image (`docker compose up -d --build`); Dockerfile installs curl for `skills_shell` |
 | Recommender answers Hold with `Files: N/A` / “no research access” | Logged-in supervisor finished after portfolio without research | Ensure current agent build (guest cannot skip portfolio; `enforce_research_routing` after login); logs should show `logged_in` then `routed to research` then `searchLocalFolder` / `searchVectorDB` |
 | `DefaultCredentialsError` / 401 / 403 from Gemini | Missing, stale container env, or project denied for `LLM_MODEL` | Put a valid key in **apira-agent `.env`** (RAG has its own for embeddings). Recreate containers: `docker compose up -d --force-recreate supervisor portfolio research` |
-| JSON-RPC `-32603` Internal error | Supervisor reached portfolio; specialist reply failed A2A encoding | See [a2a-containers.md](a2a-containers.md); rebuild current `a2a_server.py` |
+| JSON-RPC `-32603` Internal error | Supervisor reached portfolio; specialist reply failed A2A encoding | See [a2a-containers.md](a2a-containers.md); rebuild specialist images |
 | Gemini `503` high demand / quota exhausted | Temporary capacity or project quota | Retry later, switch `LLM_MODEL`, or raise quota / use a new key |
 | `zsh: bad pattern: #` | Inline `#` comment after a command | Run the command alone, no trailing comment |
 | Timeout reaching the server | Agent/MCP not running | Start local stack; `curl http://localhost:8100/health` |
@@ -188,7 +188,7 @@ For the Recommender path, see [apira-rag/docs/how-stock-recommender-works.md](ht
 docker compose up -d --build
 ```
 
-That starts Nacos plus **supervisor** (`:8100`), **portfolio** (`:8110`), and **research** (`:8120`). The **Agent Chat** and **Recommender** pages still call only `POST /chat` on `:8100`. The UI stays in the frontend; the three agent processes stay in this repo.
+That starts Nacos plus **supervisor** (host `:8100`), **portfolio**, and **research** (specialists on the Docker network only). The **Agent Chat** and **Recommender** pages still call only `POST /chat` on `:8100`. The UI stays in the frontend; the three agent processes stay in this repo.
 
 ---
 
@@ -213,5 +213,5 @@ promptfoo view
 ## Notes
 
 - Verified versions: Python 3.11, langgraph 1.2.6, langchain 1.3.10, langchain-mcp-adapters 0.3.0, langchain-google-genai 4.2.5, fastapi 0.138.0, agentscope 2.0.8, agentscope-runtime 1.1.6.post2, a2a-sdk 0.3.26.
-- Parent graph wiring lives in `agents/graph.py`; specialists and supervisor are separate packages under `agents/`. Root `agent.py` builds the Gemini/MCP client and imports that graph; `server.py` exposes `POST /chat` on the **supervisor** container. Portfolio and research are A2A servers (`a2a_server.py`) that register with Nacos.
+- Parent graph wiring lives in `agents/graph.py`; specialists and supervisor are separate packages under `agents/`. Root `agent.py` builds the Gemini/MCP client (apira-mcp only) and imports that graph; `server.py` exposes `POST /chat` on the **supervisor** container. Portfolio and research are separate A2A processes (`a2a_main.py`) that register with Nacos.
 - `agent.py` uses a default prompt (`DEFAULT_PROMPT`); `server.py` takes the prompt from each request.

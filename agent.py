@@ -1,50 +1,34 @@
-"""Apira agent — LangGraph supervisor + A2A specialists over MCP tools.
+"""Apira agent — LangGraph supervisor over A2A specialists.
 
-It connects to apira-mcp for backend tools and apira-rag for research tools
-(on the specialist containers), then runs a user prompt through a supervisor
-graph (Gemini). Portfolio and research are discovered via Nacos / A2A.
+The supervisor process connects only to apira-mcp (last-rec tools). Portfolio
+and research are other containers; this process does not load their MCP servers.
 
 Run directly (`python agent.py`) for a one-shot demo with a hard-coded prompt,
 or import `build_agent` / `run_agent` to serve it (see server.py).
 """
 
 import asyncio
-import json
 import logging
-import os
 import time
-from collections.abc import Awaitable, Callable
 
-import httpx
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_mcp_adapters.interceptors import (
-    MCPToolCallRequest,
-    MCPToolCallResult,
-)
 
 from agents.graph import compile_supervisor_graph, reset_supervisor_hops
+from agents.llm_mcp import (
+    GEMINI_MODEL,
+    create_mcp_client_and_model,
+    mcp_tool_logging_interceptor,
+    request_id_httpx_client_factory,
+)
 from logging_config import (
-    REQUEST_ID_HEADER,
     configure_logging,
     get_request_id,
     log_event,
-    normalize_user_id,
-    set_user_id,
 )
 
 load_dotenv()
 configure_logging()
 logger = logging.getLogger(__name__)
-
-# In-container default: MCP on the host-published port, not localhost inside Docker.
-MCP_URL = os.environ.get("MCP_URL", "http://host.docker.internal:8000/mcp")
-RAG_MCP_URL = os.environ.get(
-    "RAG_MCP_URL", "http://host.docker.internal:8200/mcp"
-)
-
-GEMINI_MODEL = os.environ.get("LLM_MODEL", "gemini-3.1-flash-lite")
 
 # CLI demo: login then holdings, without naming tools in the prompt.
 DEFAULT_PROMPT = (
@@ -52,181 +36,18 @@ DEFAULT_PROMPT = (
     "user's portfolio and summarize the holdings."
 )
 
-
-
-def request_id_httpx_client_factory(
-    headers: dict[str, str] | None = None,
-    timeout: httpx.Timeout | None = None,
-    auth: httpx.Auth | None = None,
-) -> httpx.AsyncClient:
-    """Create an MCP HTTP client with the current request ID."""
-    outbound_headers = dict(headers or {})
-    request_id = get_request_id()
-    if request_id:
-        outbound_headers[REQUEST_ID_HEADER] = request_id
-    return httpx.AsyncClient(headers=outbound_headers, timeout=timeout, auth=auth)
-
-
-def _parse_tool_payload(result: MCPToolCallResult) -> dict | None:
-    """Best-effort JSON object extraction from an MCP tool result."""
-    content = getattr(result, "content", None)
-    texts: list[str] = []
-    if isinstance(content, str):
-        texts.append(content)
-    elif isinstance(content, list):
-        for block in content:
-            if isinstance(block, str):
-                texts.append(block)
-            elif isinstance(block, dict) and isinstance(block.get("text"), str):
-                texts.append(block["text"])
-            else:
-                text = getattr(block, "text", None)
-                if isinstance(text, str):
-                    texts.append(text)
-    for text in texts:
-        try:
-            payload = json.loads(text)
-        except (TypeError, json.JSONDecodeError):
-            continue
-        if isinstance(payload, dict):
-            return payload
-    return None
-
-
-def _safe_tool_result_fields(tool_name: str, result: MCPToolCallResult) -> dict:
-    """Extract correlatable business fields without secrets or full replies."""
-    if getattr(result, "isError", False):
-        return {}
-    payload = _parse_tool_payload(result)
-    if not payload:
-        return {}
-
-    if tool_name == "login":
-        user_id = payload.get("user_id")
-        return {"user_id": user_id} if user_id is not None else {}
-
-    if tool_name == "get_portfolio":
-        holdings = payload.get("holdings") or []
-        if not isinstance(holdings, list):
-            return {}
-        tickers = [
-            item.get("ticker")
-            for item in holdings
-            if isinstance(item, dict) and item.get("ticker")
-        ]
-        fields: dict = {
-            "holdings_count": len(holdings),
-            "tickers": tickers,
-            "holdings_summary": [
-                {"ticker": item.get("ticker"), "shares": item.get("shares")}
-                for item in holdings
-                if isinstance(item, dict)
-            ],
-        }
-        # login JSON includes user_id; get_portfolio args already had it.
-        if payload.get("user_id") is not None:
-            fields["user_id"] = payload["user_id"]
-        return fields
-
-    return {}
-
-
-async def mcp_tool_logging_interceptor(
-    request: MCPToolCallRequest,
-    handler: Callable[[MCPToolCallRequest], Awaitable[MCPToolCallResult]],
-) -> MCPToolCallResult:
-    """Correlate and safely log one MCP tool invocation."""
-    request_id = get_request_id()
-    if request_id:
-        request = request.override(
-            headers={**(request.headers or {}), REQUEST_ID_HEADER: request_id}
-        )
-
-    fields = {
-        "tool_name": request.name,
-        "upstream": request.server_name,
-        "argument_keys": sorted(request.args),
-    }
-    if request.name == "get_portfolio" and "user_id" in request.args:
-        fields["user_id"] = request.args["user_id"]
-
-    started = time.perf_counter()
-    log_event(
-        logger,
-        logging.INFO,
-        "mcp.tool.started",
-        f"MCP tool {request.name} started",
-        **fields,
-    )
-    try:
-        result = await handler(request)
-    except Exception as exc:
-        log_event(
-            logger,
-            logging.ERROR,
-            "mcp.tool.failed",
-            f"MCP tool {request.name} failed",
-            duration_ms=round((time.perf_counter() - started) * 1000, 2),
-            error_type=type(exc).__name__,
-            **fields,
-        )
-        raise
-
-    event = "mcp.tool.failed" if getattr(result, "isError", False) else "mcp.tool.completed"
-    level = logging.ERROR if event == "mcp.tool.failed" else logging.INFO
-    result_fields = dict(fields)
-    if event == "mcp.tool.failed":
-        result_fields["error_type"] = "MCPToolError"
-    else:
-        result_fields.update(_safe_tool_result_fields(request.name, result))
-        # Once login (or portfolio) reveals the user, stamp the rest of this request.
-        bound_user_id = normalize_user_id(result_fields.get("user_id"))
-        if bound_user_id is not None:
-            set_user_id(bound_user_id)
-            if request.name == "get_portfolio" and "user_id" not in fields:
-                fields["user_id"] = bound_user_id
-    if event == "mcp.tool.failed":
-        message = f"MCP tool {request.name} returned an error"
-    else:
-        message = f"MCP tool {request.name} completed via {request.server_name}"
-    log_event(
-        logger,
-        level,
-        event,
-        message,
-        duration_ms=round((time.perf_counter() - started) * 1000, 2),
-        **result_fields,
-    )
-    return result
-
-
-async def create_mcp_client_and_model():
-    """Shared Gemini model + MCP client for supervisor and A2A specialists."""
-    client = MultiServerMCPClient(
-        {
-            "apira": {
-                "url": MCP_URL,
-                "transport": "streamable_http",
-                "httpx_client_factory": request_id_httpx_client_factory,
-            },
-            "research": {
-                "url": RAG_MCP_URL,
-                "transport": "streamable_http",
-                "httpx_client_factory": request_id_httpx_client_factory,
-            },
-        },
-        tool_interceptors=[mcp_tool_logging_interceptor],
-    )
-    # max_retries=0 so a 429 (quota) fails fast instead of honoring Gemini's
-    # multi-second retry delay and hanging the request.
-    model = ChatGoogleGenerativeAI(
-        model=GEMINI_MODEL, temperature=0, max_retries=0
-    )
-    return model, client
+__all__ = [
+    "GEMINI_MODEL",
+    "build_agent",
+    "create_mcp_client_and_model",
+    "mcp_tool_logging_interceptor",
+    "request_id_httpx_client_factory",
+    "run_agent",
+]
 
 
 async def build_agent():
-    """Load MCP tools and build a LangGraph agent backed by Gemini."""
+    """Load supervisor MCP tools and build a LangGraph agent backed by Gemini."""
     started = time.perf_counter()
     log_event(
         logger,
@@ -236,7 +57,7 @@ async def build_agent():
         model=GEMINI_MODEL,
     )
     try:
-        model, client = await create_mcp_client_and_model()
+        model, client = await create_mcp_client_and_model(mcp_servers=["apira"])
         agent = await compile_supervisor_graph(model, client)
     except Exception as exc:
         log_event(

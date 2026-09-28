@@ -151,7 +151,7 @@ class CorrelationTests(unittest.IsolatedAsyncioTestCase):
 
         token = set_request_id(request_id)
         try:
-            with patch("agent.logger", capture.logger):
+            with patch("agents.llm_mcp.logger", capture.logger):
                 await mcp_tool_logging_interceptor(request, handler)
         finally:
             reset_request_id(token)
@@ -189,7 +189,7 @@ class CorrelationTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
 
-        with patch("agent.logger", capture.logger):
+        with patch("agents.llm_mcp.logger", capture.logger):
             await mcp_tool_logging_interceptor(request, handler)
 
         output = capture.stream.getvalue()

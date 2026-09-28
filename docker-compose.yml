@@ -15,8 +15,6 @@ x-agent-env: &agent-env
   NACOS_SERVER_ADDR: nacos:8848
   A2A_REGISTRY_ENABLED: "true"
   A2A_REGISTRY_TYPE: nacos
-  PORTFOLIO_A2A_BASE_URL: http://portfolio:8110
-  RESEARCH_A2A_BASE_URL: http://research:8120
   A2A_TASK_TIMEOUT: "180"
 
 services:
@@ -45,7 +43,9 @@ services:
     restart: unless-stopped
 
   supervisor:
-    build: .
+    build:
+      context: .
+      target: supervisor
     ports:
       - "8100:8100"
     environment:
@@ -67,9 +67,9 @@ services:
     restart: unless-stopped
 
   portfolio:
-    build: .
-    ports:
-      - "8110:8110"
+    build:
+      context: .
+      target: portfolio
     environment:
       <<: *agent-env
       AGENT_ROLE: portfolio
@@ -92,9 +92,9 @@ services:
     restart: unless-stopped
 
   research:
-    build: .
-    ports:
-      - "8120:8120"
+    build:
+      context: .
+      target: research
     environment:
       <<: *agent-env
       AGENT_ROLE: research

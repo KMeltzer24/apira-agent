@@ -1,22 +1,16 @@
-"""Resolve A2A Agent Cards: Nacos first, then well-known HTTP fallback."""
+"""Resolve A2A Agent Cards from the Nacos registry only."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
-from a2a.client.card_resolver import A2ACardResolver
+
 from a2a.types import AgentCard
-from httpx import AsyncClient
 
 from logging_config import log_event
 
 logger = logging.getLogger(__name__)
-
-_FALLBACK_URLS = {
-    "portfolio": os.environ.get("PORTFOLIO_A2A_BASE_URL", "http://portfolio:8110"),
-    "research": os.environ.get("RESEARCH_A2A_BASE_URL", "http://research:8120"),
-}
 
 
 def _nacos_server_addr() -> str:
@@ -62,22 +56,15 @@ class NacosAgentCardResolver:
         raise TypeError(f"Unexpected agent card type: {type(detail)!r}")
 
 
-async def _card_from_well_known(base_url: str) -> AgentCard:
-    async with AsyncClient(timeout=10.0) as client:
-        resolver = A2ACardResolver(httpx_client=client, base_url=base_url)
-        return await resolver.get_agent_card()
-
-
 async def discover_agent_card(
     agent_name: str,
     *,
     attempts: int = 30,
     delay_seconds: float = 2.0,
 ) -> AgentCard:
-    """Retry Nacos discovery, then the specialist's well-known Agent Card URL."""
+    """Retry Nacos discovery until the named agent is in the registry."""
     last_error: Exception | None = None
     resolver = NacosAgentCardResolver(agent_name)
-    fallback = _FALLBACK_URLS.get(agent_name)
     for attempt in range(1, attempts + 1):
         try:
             card = await resolver.get_agent_card()
@@ -103,21 +90,6 @@ async def discover_agent_card(
                 attempt=attempt,
                 error_type=type(exc).__name__,
             )
-        if fallback:
-            try:
-                card = await _card_from_well_known(fallback)
-                log_event(
-                    logger,
-                    logging.INFO,
-                    "a2a.discover.completed",
-                    f"Discovered {agent_name} via well-known card",
-                    agent_name=agent_name,
-                    source="well_known",
-                    attempt=attempt,
-                )
-                return card
-            except Exception as exc:
-                last_error = exc
         await asyncio.sleep(delay_seconds)
     raise RuntimeError(
         f"Could not discover A2A agent {agent_name!r} after {attempts} attempts"

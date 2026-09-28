@@ -214,12 +214,17 @@ class ResearchSkillsIntegrationTests(unittest.TestCase):
             self.assertIn("RAG_MCP_URL", text, msg=path.name)
             self.assertIn("tools/call", text, msg=path.name)
             self.assertIn(tool_name, text, msg=path.name)
+            self.assertIn("Accept: application/json, text/event-stream", text, msg=path.name)
             for token in forbidden:
                 self.assertIn(token, text, msg=f"{path.name} should forbid {token}")
 
         for tool_name, path in prompt_files.items():
             text = path.read_text(encoding="utf-8")
             self.assertNotIn("```bash", text, msg=path.name)
+
+        vector_prompt = prompt_files["searchVectorDB"].read_text(encoding="utf-8")
+        self.assertIn("```python", vector_prompt)
+        self.assertIn("Accept", vector_prompt)
 
         for tool_name, path in shell_files.items():
             text = path.read_text(encoding="utf-8")

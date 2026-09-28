@@ -4,7 +4,7 @@ A Python agent that uses [apira-mcp](https://github.com/KMeltzer24/apira-mcp) fo
 
 Built with **LangChain**, **LangGraph**, **AgentScope A2A**, and **langchain-mcp-adapters**. Run it in Docker on your **Mac** ([apira run-locally.md](https://github.com/KMeltzer24/apira/blob/main/docs/run-locally.md)). Agent Chat and Recommender call `POST /chat` on the supervisor at port 8100. Portfolio and research run in their own containers and register with Nacos.
 
-**A2A split (three containers):** [docs/a2a-containers.md](docs/a2a-containers.md) — what changed, and how [docker-compose.yml](docker-compose.yml) starts supervisor, portfolio, and research.
+**A2A (three containers + Nacos):** [docs/a2a-containers.md](docs/a2a-containers.md) — register/discover/call, compose, how to verify, live proof.
 
 **Last rec after login:** [docs/get-previous-recommendation.md](docs/get-previous-recommendation.md) — why `getPreviousRecommendation` is bound only on the logged-in supervisor.
 
@@ -38,10 +38,10 @@ The first supervisor cannot route to research and has no tools. Portfolio and re
 | Node | Role | MCP tools |
 |------|------|-----------|
 | **supervisor** | Pre-login: answer chat or send to portfolio | none (`agents/supervisor/`); container `:8100` |
-| **portfolio** | Login and holdings; marks the session logged in | `login`, `get_portfolio`; A2A container `:8110` |
+| **portfolio** | Login and holdings; marks the session logged in | `login`, `get_portfolio`; A2A container (not published) |
 | **logged_in** | Post-portfolio supervisor: route to research/finish, or call `getPreviousRecommendation` | `getPreviousRecommendation` only (same supervisor container) |
 | **save_recommendation** | After research: upsert last rec | supervisor (`PUT /recommendation`; MCP `saveRecommendation` is the same API) |
-| **research** | Citations and Hold/Add/Trim | `searchLocalFolder`, `searchVectorDB`; A2A container `:8120` |
+| **research** | Citations and Hold/Add/Trim | `searchLocalFolder`, `searchVectorDB`; A2A container (not published) |
 
 Tool **names stay the same** across packaging modes. Set `TOOL_MODE` to switch how specialists load them:
 
@@ -136,10 +136,10 @@ Four cases: supervisor chat, alice portfolio (share counts), local-folder recomm
 ## Logging and correlation
 
 The API accepts or generates an `X-Request-ID`, returns it to the caller, and
-propagates it through LangGraph and calls to both MCP servers. JSON events on
-stdout cover HTTP requests, supervisor/specialist runs (`agent_name`), and MCP tool calls,
-including safe metadata such as durations and argument names. Prompts, replies,
-tool argument values, passwords, and keys are not logged.
+propagates it through LangGraph, A2A hops, and MCP calls from each process.
+JSON events on stdout cover HTTP requests, supervisor/specialist runs (`agent_name`),
+and MCP tool calls, including safe metadata such as durations and argument names.
+Prompts, replies, tool argument values, passwords, and keys are not logged.
 
 ```bash
 docker compose logs -f supervisor

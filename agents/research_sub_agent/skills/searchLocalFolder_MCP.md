@@ -10,6 +10,9 @@ markdown. Do **not** walk `${STOCK_RESEARCH_DIR}` on disk.
 - **MCP URL:** `${RAG_MCP_URL}` (Streamable HTTP, typically ends in `/mcp`).
 - Open an MCP session to that URL, then `tools/call` with
   `name=searchLocalFolder` and `arguments={"query": "<query>"}`.
+- Streamable HTTP **requires** `Accept: application/json, text/event-stream`
+  and `Content-Type: application/json` on every request. Missing Accept is
+  HTTP 406. After `initialize`, send `Mcp-Session-Id` on later calls.
 - Optional header: `X-Request-ID` from env `X_REQUEST_ID` when set.
 - The official `mcp` Python client (`streamablehttp_client` + `ClientSession`)
   is fine; raw JSON-RPC is also fine. Do not use LangChain MCP adapters or

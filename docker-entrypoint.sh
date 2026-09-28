@@ -9,8 +9,11 @@ case "$ROLE" in
   supervisor)
     exec uvicorn server:app --host 0.0.0.0 --port "$PORT" --no-access-log
     ;;
-  portfolio|research)
-    exec python a2a_server.py
+  portfolio)
+    exec python -m agents.portfolio_sub_agent.a2a_main
+    ;;
+  research)
+    exec python -m agents.research_sub_agent.a2a_main
     ;;
   *)
     echo "Unknown AGENT_ROLE=$ROLE (expected supervisor, portfolio, or research)" >&2
