@@ -128,7 +128,7 @@ Supervisor parse/routing and graph compile live in `tests/test_graph.py`. These 
 
 There are two live entry points: a hardcoded one-shot prompt, and the custom-prompt API.
 
-### Hardcoded prompt (the assignment demo)
+### Hardcoded prompt
 
 `agent.py` runs the hardcoded `DEFAULT_PROMPT` ("log in as alice, then summarize the portfolio"). Run it inside the supervisor container so it inherits `MCP_URL` and `GOOGLE_API_KEY`:
 

@@ -1,6 +1,6 @@
 # getPreviousRecommendation — only after login
 
-The assignment: add a tool `getPreviousRecommendations` on the supervisor, and call it **only after login**.
+`getPreviousRecommendation` is bound on the supervisor and may run **only after login**.
 
 In this repo the tool is named **`getPreviousRecommendation`** (singular). Enforcement is **not** an MCP ACL and **not** a prompt-only rule. The guest supervisor never receives the tool object.
 
