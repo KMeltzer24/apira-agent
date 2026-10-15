@@ -27,10 +27,10 @@ def _local_search_env() -> dict[str, str]:
 
 
 def _rag_mcp_env() -> dict[str, str]:
+    mcp_url = os.environ.get("MCP_URL", "http://host.docker.internal:8000/mcp")
     return {
-        "RAG_MCP_URL": os.environ.get(
-            "RAG_MCP_URL", "http://host.docker.internal:8200/mcp"
-        ),
+        "MCP_URL": mcp_url,
+        "RAG_MCP_URL": os.environ.get("RAG_MCP_URL") or mcp_url,
         "PYTHON_BIN": sys.executable,
     }
 

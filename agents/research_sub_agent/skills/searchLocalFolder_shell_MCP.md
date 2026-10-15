@@ -7,7 +7,7 @@ markdown. Do **not** search the local folder.
 ## Contract
 
 - **Args:** `query`.
-- **MCP URL:** `${RAG_MCP_URL}` (Streamable HTTP).
+- **MCP URL:** `${MCP_URL}` (Streamable HTTP).
 - JSON-RPC `initialize`, then `notifications/initialized`, then `tools/call`
   `searchLocalFolder` with `{"query": "<query>"}`.
 - Send `Mcp-Session-Id` from the initialize response on later requests.
@@ -19,7 +19,7 @@ markdown. Do **not** search the local folder.
 
 ```bash
 set -euo pipefail
-URL="${RAG_MCP_URL}"
+URL="${MCP_URL}"
 Q="${query:-}"
 HDR=(-sS -X POST "$URL"
   -H "Content-Type: application/json"

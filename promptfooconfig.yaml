@@ -1,7 +1,7 @@
 # Promptfoo evals for the Apira LangGraph supervisor (POST /chat).
 # Scores the full multi-agent run (final reply), not each specialist separately.
 #
-# Prerequisites: local stack up (see apira/docs/run-locally.md), then:
+# Prerequisites: local stack up (see apira README), then:
 #   curl -s http://localhost:8100/health
 #   REQUEST_TIMEOUT_MS=180000 npx promptfoo@latest eval
 #

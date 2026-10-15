@@ -1,4 +1,4 @@
-"""Portfolio A2A process: AgentApp, Nacos registration, apira-mcp tools only."""
+"""Portfolio A2A process: AgentApp, Nacos registration, login/holdings MCP tools."""
 
 from __future__ import annotations
 

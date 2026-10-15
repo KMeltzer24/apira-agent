@@ -31,9 +31,8 @@ from logging_config import (
 logger = logging.getLogger(__name__)
 
 MCP_URL = os.environ.get("MCP_URL", "http://host.docker.internal:8000/mcp")
-RAG_MCP_URL = os.environ.get(
-    "RAG_MCP_URL", "http://host.docker.internal:8200/mcp"
-)
+# Optional override for the research client; defaults to MCP_URL.
+RAG_MCP_URL = os.environ.get("RAG_MCP_URL") or MCP_URL
 GEMINI_MODEL = os.environ.get("LLM_MODEL", "gemini-3.1-flash-lite")
 
 MCP_SERVER_SPECS = {

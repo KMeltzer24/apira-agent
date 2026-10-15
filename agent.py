@@ -1,7 +1,7 @@
 """Apira agent — LangGraph supervisor over A2A specialists.
 
-The supervisor process connects only to apira-mcp (last-rec tools). Portfolio
-and research are other containers; this process does not load their MCP servers.
+The supervisor process connects only to the Apira MCP server (last-rec tools).
+Portfolio and research run in other containers with their own tool allowlists.
 
 Run directly (`python agent.py`) for a one-shot demo with a hard-coded prompt,
 or import `build_agent` / `run_agent` to serve it (see server.py).

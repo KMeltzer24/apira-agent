@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from agent import build_agent, run_agent
+from agents.llm_errors import user_facing_llm_error
 from logging_config import (
     REQUEST_ID_HEADER,
     log_event,
@@ -164,14 +165,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
         )
         # Return a readable message (with CORS headers intact) instead of a bare
         # 500, which the browser would surface only as "Failed to fetch".
-        detail = str(exc)
-        if "RESOURCE_EXHAUSTED" in detail or "429" in detail:
-            reply = (
-                "The Gemini API quota is exhausted for now. Try again later, "
-                "switch LLM_MODEL, or raise the project's quota."
-            )
-        else:
-            reply = f"The agent hit an error: {detail[:300]}"
+        reply = user_facing_llm_error(exc)
     else:
         log_event(
             logger,

@@ -39,7 +39,7 @@ def _skills():
 async def load_specialist():
     from agents.research_sub_agent.agent import build_agent as build_research
 
-    model, client = await create_mcp_client_and_model(mcp_servers=["research"])
+    model, client = await create_mcp_client_and_model(mcp_servers=["apira"])
     return await build_research(model, client)
 
 

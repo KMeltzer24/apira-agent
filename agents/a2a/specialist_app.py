@@ -13,6 +13,7 @@ from typing import Any
 from langchain_core.messages import AIMessage
 
 from agents.a2a.payload import decode_state, encode_state, message_text
+from agents.llm_errors import user_facing_llm_error
 from agentscope_runtime.engine.app import AgentApp
 from agentscope_runtime.engine.deployers.adapter.a2a import AgentCardWithRuntimeConfig
 from logging_config import (
@@ -130,9 +131,24 @@ def create_specialist_app(
         if inbound_request_id:
             token = set_request_id(inbound_request_id)
         specialist = await get_specialist()
-        result = await specialist(
-            state, config={"metadata": {"request_id": inbound_request_id}}
-        )
+        try:
+            result = await specialist(
+                state, config={"metadata": {"request_id": inbound_request_id}}
+            )
+        except Exception as exc:
+            log_event(
+                logger,
+                logging.ERROR,
+                "agent.run.failed",
+                f"{role} specialist failed",
+                agent_name=role,
+                error_type=type(exc).__name__,
+            )
+            result = {
+                **state,
+                "messages": list(state.get("messages") or [])
+                + [AIMessage(content=user_facing_llm_error(exc))],
+            }
         encoded = encode_state(result)
         if token is not None:
             reset_request_id(token)

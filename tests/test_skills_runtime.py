@@ -211,7 +211,7 @@ class ResearchSkillsIntegrationTests(unittest.TestCase):
 
         for tool_name, path in {**prompt_files, **shell_files}.items():
             text = path.read_text(encoding="utf-8")
-            self.assertIn("RAG_MCP_URL", text, msg=path.name)
+            self.assertIn("MCP_URL", text, msg=path.name)
             self.assertIn("tools/call", text, msg=path.name)
             self.assertIn(tool_name, text, msg=path.name)
             self.assertIn("Accept: application/json, text/event-stream", text, msg=path.name)

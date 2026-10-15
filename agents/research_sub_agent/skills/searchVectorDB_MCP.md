@@ -7,7 +7,7 @@ embed locally, walk `${STOCK_RESEARCH_DIR}`, or query Postgres yourself.
 ## Contract
 
 - **Args:** `query` (ticker or keyword).
-- **MCP URL:** `${RAG_MCP_URL}` (Streamable HTTP, typically ends in `/mcp`).
+- **MCP URL:** `${MCP_URL}` (Streamable HTTP, typically ends in `/mcp`).
 - Open an MCP session to that URL, then `tools/call` with
   `name=searchVectorDB` and `arguments={"query": "<query>"}`.
 - Streamable HTTP **requires** `Accept: application/json, text/event-stream`
@@ -30,7 +30,7 @@ import json
 import os
 import urllib.request
 
-url = os.environ["RAG_MCP_URL"]
+url = os.environ["MCP_URL"]
 query = os.environ.get("query", "")
 headers = {
     "Content-Type": "application/json",

@@ -7,7 +7,7 @@ markdown. Do **not** walk `${STOCK_RESEARCH_DIR}` on disk.
 ## Contract
 
 - **Args:** `query` (ticker or keyword).
-- **MCP URL:** `${RAG_MCP_URL}` (Streamable HTTP, typically ends in `/mcp`).
+- **MCP URL:** `${MCP_URL}` (Streamable HTTP, typically ends in `/mcp`).
 - Open an MCP session to that URL, then `tools/call` with
   `name=searchLocalFolder` and `arguments={"query": "<query>"}`.
 - Streamable HTTP **requires** `Accept: application/json, text/event-stream`

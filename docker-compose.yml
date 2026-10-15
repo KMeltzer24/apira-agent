@@ -1,6 +1,6 @@
 x-agent-env: &agent-env
   MCP_URL: ${MCP_URL:-http://host.docker.internal:8000/mcp}
-  RAG_MCP_URL: ${RAG_MCP_URL:-http://host.docker.internal:8200/mcp}
+  RAG_MCP_URL: ${RAG_MCP_URL:-${MCP_URL:-http://host.docker.internal:8000/mcp}}
   USER_SERVICE_URL: ${USER_SERVICE_URL:-http://host.docker.internal:8001}
   PORTFOLIO_SERVICE_URL: ${PORTFOLIO_SERVICE_URL:-http://host.docker.internal:8002}
   STOCK_RESEARCH_DIR: ${STOCK_RESEARCH_DIR:-/data/stock-research}
